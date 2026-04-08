@@ -1,5 +1,7 @@
 {
-    "chat.tools.terminal.autoApprove": {
-        "Test-Path": true
-    }
+  "git.autofetch": true,
+  "git.confirmSync": false,
+  "github.copilot.chat.experimental.codeGeneration.enableAutoRun": true,
+  "git.enableSmartCommit": true,
+  "prisma.trace.server": "verbose"
 }
