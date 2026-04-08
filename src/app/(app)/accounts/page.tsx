@@ -1,7 +1,9 @@
 import { Suspense } from 'react'
 import { Plus } from 'lucide-react'
+import Link from 'next/link'
 import AccountCard from '@/components/AccountCard'
 import { prisma } from '@/lib/prisma'
+import { auth } from '@/lib/auth'
 
 function toNumber(d: { toString(): string } | null | undefined): number {
   if (!d) return 0
@@ -9,7 +11,11 @@ function toNumber(d: { toString(): string } | null | undefined): number {
 }
 
 async function AccountsContent() {
+  const session = await auth()
+  const userId = session?.user?.id
+
   const portfolio = await prisma.portfolio.findFirst({
+    where: userId ? { userId } : undefined,
     include: {
       accounts: {
         include: { institution: true },
@@ -80,10 +86,13 @@ export default function AccountsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Contas</h1>
           <p className="text-sm text-gray-500 mt-1">Gerenciar contas de investimento</p>
         </div>
-        <button className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
+        <Link
+          href="/accounts/new"
+          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+        >
           <Plus size={16} />
           Nova Conta
-        </button>
+        </Link>
       </div>
       <Suspense fallback={<AccountsSkeleton />}>
         <AccountsContent />

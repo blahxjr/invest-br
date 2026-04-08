@@ -1,6 +1,8 @@
 import { Suspense } from 'react'
-import { ArrowLeftRight } from 'lucide-react'
+import { ArrowLeftRight, Plus } from 'lucide-react'
+import Link from 'next/link'
 import { prisma } from '@/lib/prisma'
+import { auth } from '@/lib/auth'
 
 const typeLabels: Record<string, string> = {
   BUY: 'Compra',
@@ -39,7 +41,11 @@ function formatDate(date: Date) {
 }
 
 async function TransactionsContent() {
+  const session = await auth()
+  const userId = session?.user?.id
+
   const portfolio = await prisma.portfolio.findFirst({
+    where: userId ? { userId } : undefined,
     include: { accounts: true },
   })
 
@@ -130,9 +136,18 @@ export default function TransactionsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Movimentações</h1>
           <p className="text-sm text-gray-500 mt-1">Histórico de transações (últimas 50)</p>
         </div>
-        <div className="flex items-center gap-2 text-gray-500">
-          <ArrowLeftRight size={16} />
-          <span className="text-sm">Ledger</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 text-gray-500">
+            <ArrowLeftRight size={16} />
+            <span className="text-sm">Ledger</span>
+          </div>
+          <Link
+            href="/transactions/new"
+            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+          >
+            <Plus size={16} />
+            Nova Transação
+          </Link>
         </div>
       </div>
       <Suspense fallback={<TransactionsSkeleton />}>

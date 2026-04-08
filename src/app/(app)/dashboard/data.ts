@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { getPositionsByAccount } from '@/modules/income/service'
 import { getIncomeEventsByAccount } from '@/modules/income/service'
+import { auth } from '@/lib/auth'
 
 export interface DashboardData {
   totalPatrimony: number
@@ -30,8 +31,12 @@ function toNumber(d: { toString(): string } | null | undefined): number {
 }
 
 export async function getDashboardData(): Promise<DashboardData> {
-  // Pega o primeiro portfolio disponível
+  const session = await auth()
+  const userId = session?.user?.id
+
+  // Pega o portfolio do usuário autenticado (ou primeiro disponível em dev)
   const portfolio = await prisma.portfolio.findFirst({
+    where: userId ? { userId } : undefined,
     include: { accounts: { include: { institution: true } } },
   })
 

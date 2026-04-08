@@ -1,5 +1,6 @@
 import { Suspense } from 'react'
 import { Plus, Tag } from 'lucide-react'
+import Link from 'next/link'
 import { prisma } from '@/lib/prisma'
 
 const categoryLabels: Record<string, string> = {
