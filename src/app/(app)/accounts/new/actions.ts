@@ -36,17 +36,11 @@ export async function createAccountAction(formData: FormData) {
   // Cria ou reutiliza a instituição se informada
   let institutionId: string | null = null
   if (institutionName?.trim()) {
-    const institution = await prisma.institution.upsert({
-      where: { id: `name:${institutionName.trim()}` },
-      create: { name: institutionName.trim() },
-      update: {},
-    }).catch(async () => {
-      // fallback: busca por nome
-      const existing = await prisma.institution.findFirst({
-        where: { name: institutionName.trim() },
-      })
-      if (existing) return existing
-      return prisma.institution.create({ data: { name: institutionName.trim() } })
+    const existing = await prisma.institution.findFirst({
+      where: { name: institutionName.trim() },
+    })
+    const institution = existing ?? await prisma.institution.create({
+      data: { name: institutionName.trim() },
     })
     institutionId = institution.id
   }
