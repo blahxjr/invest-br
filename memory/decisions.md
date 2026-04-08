@@ -1,6 +1,6 @@
 # Decisões técnicas
 
-**Última atualização:** 2026-04-07
+**Última atualização:** 2026-04-08
 
 ## DEC-001 — Prisma 7 requer driver adapter
 
@@ -46,3 +46,21 @@
 **Contexto:** Prisma não permite modelo e enum com o mesmo nome. O objetivo definia `AssetClass` como enum E como model.
 **Decisão:** Enum nomeado `AssetCategory` (valores: STOCK, FII, ETF…); model nomeado `AssetClass` (representa a categoria administrativa com nome/código/descrição). Campo `category` em `Asset` usa `AssetCategory`.
 **Consequência:** Queries de ativo filtram por `category` (enum direto) ou por `assetClassId` (relação com o model). Ambos os eixos estão disponíveis.
+
+## DEC-011 — Magic link via Nodemailer (sem senhas)
+
+**Contexto:** Fase 5 adicionou autenticação ao sistema. Escolher entre OAuth, credenciais (login/senha) e magic link.
+**Decisão:** Nodemailer provider do NextAuth — usuário informa e-mail e recebe link único de acesso.
+**Consequência:** Sem armazenamento de senhas. Dependência de servidor SMTP em produção. UX simples e segura.
+
+## DEC-012 — Estratégia de sessão: database (não JWT)
+
+**Contexto:** NextAuth suporta sessões JWT (stateless) ou database (stateful). JWT é mais simples mas não permite revogação imediata.
+**Decisão:** `session: { strategy: 'database' }` — tokens de sessão persistidos na tabela `Session` via PrismaAdapter.
+**Consequência:** Sessões podem ser revogadas. Requer acesso ao banco em cada request. Tabelas `AuthAccount`, `Session`, `VerificationToken` adicionadas ao schema.
+
+## DEC-013 — user.id na sessão via session callback
+
+**Contexto:** Por padrão, NextAuth v5 não expõe `user.id` na sessão do cliente/Server Components.
+**Decisão:** Adicionar callback `session({ session, user }) { session.user.id = user.id }` em `auth.ts`.
+**Consequência:** `session.user.id` disponível em todos os Server Components e Server Actions para filtrar dados por usuário. Tipo aumentado em `src/types/next-auth.d.ts`.
