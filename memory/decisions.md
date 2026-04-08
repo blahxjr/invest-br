@@ -20,7 +20,24 @@
 **Decisão:** `dotenv` carrega `.env.local` primeiro com `override: true`, depois `.env` como fallback.
 **Consequência:** Nunca commitar `.env.local`. Manter `.env` apenas como exemplo/documentação.
 
-## DEC-006 — Decimal importado de @prisma/client
+## DEC-008 — Next.js 16 + Prisma em Server Components
+
+**Contexto:** Next.js 16 tenta fazer bundle do Prisma Client e adapters junto ao código do servidor. O `PrismaClient` com driver adapter não funciona corretamente quando bundled pelo Next.
+**Decisão:** Adicionar `serverComponentsExternalPackages: ['@prisma/client', '@prisma/adapter-pg', 'pg']` no `next.config.ts`.
+**Consequência:** O Prisma Client roda no runtime Node.js do servidor, não bundled.
+
+## DEC-009 — Tailwind CSS v4 sem tailwind.config.js
+
+**Contexto:** Tailwind v4 mudou o modelo de configuração — não usa mais `tailwind.config.js`. O conteúdo é detectado automaticamente (CSS-first config).
+**Decisão:** Usar apenas `@import "tailwindcss"` no `globals.css` e `@tailwindcss/postcss` como plugin PostCSS.
+**Consequência:** Sem arquivo de config Tailwind. Customizações via `@theme` no CSS quando necessário.
+
+## DEC-010 — vitest jsdom por arquivo (não por glob)
+
+**Contexto:** O `environmentMatchGlobs` do vitest não sobrepõe o `environment: 'node'` global de forma confiável nesta versão.
+**Decisão:** Adicionar `// @vitest-environment jsdom` no topo de cada arquivo de teste de componente React.
+**Consequência:** Cada arquivo de componente declara seu próprio ambiente. Mais explícito e confiável.
+
 
 **Contexto:** Prisma 7 não expõe `@prisma/client/runtime/library` como módulo importável diretamente.
 **Decisão:** `import { Decimal } from '@prisma/client'` — exportado diretamente do pacote principal.
