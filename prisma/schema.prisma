@@ -1,0 +1,187 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AccountType {
+  BROKERAGE
+  BANK
+  CRYPTO_WALLET
+  REAL_ESTATE
+  MANUAL
+}
+
+enum InstitutionType {
+  BROKER
+  BANK
+  CRYPTO_EXCHANGE
+  REAL_ESTATE_FUND
+  OTHER
+}
+
+model User {
+  id         String      @id @default(cuid())
+  email      String      @unique
+  name       String?
+  portfolios Portfolio[]
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+}
+
+model Portfolio {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  accounts    Account[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Institution {
+  id        String           @id @default(cuid())
+  name      String
+  type      InstitutionType?
+  accounts  Account[]
+  createdAt DateTime         @default(now())
+}
+
+model Account {
+  id            String        @id @default(cuid())
+  name          String
+  type          AccountType
+  portfolioId   String
+  portfolio     Portfolio     @relation(fields: [portfolioId], references: [id])
+  institutionId String?
+  institution   Institution?  @relation(fields: [institutionId], references: [id])
+  transactions  Transaction[]
+  ledgerEntries LedgerEntry[]
+  incomeEvents  IncomeEvent[]
+  rentalReceipts RentalReceipt[]
+  createdAt     DateTime      @default(now())
+}
+
+// ─── Catálogo de ativos ──────────────────────────────────────────────────────
+
+enum AssetCategory {
+  STOCK
+  FII
+  ETF
+  FIXED_INCOME
+  FUND
+  CRYPTO
+  METAL
+  REAL_ESTATE
+  CASH
+}
+
+model AssetClass {
+  id          String        @id @default(cuid())
+  name        String
+  code        String?       @unique
+  description String?
+  assets      Asset[]
+  createdAt   DateTime      @default(now())
+}
+
+model Asset {
+  id           String        @id @default(cuid())
+  name         String
+  ticker       String?       @unique
+  isin         String?       @unique
+  cnpj         String?       @unique
+  category     AssetCategory
+  assetClassId String
+  assetClass   AssetClass    @relation(fields: [assetClassId], references: [id])
+  transactions Transaction[]
+  incomeEvents IncomeEvent[]
+  createdAt    DateTime      @default(now())
+}
+
+// ─── Ledger ──────────────────────────────────────────────────────────────────
+
+enum TransactionType {
+  BUY
+  SELL
+  DEPOSIT
+  WITHDRAWAL
+  DIVIDEND
+  INCOME
+  RENT
+}
+
+model Transaction {
+  id           String          @id @default(cuid())
+  referenceId  String          @unique // chave de idempotência
+  type         TransactionType
+  accountId    String
+  account      Account         @relation(fields: [accountId], references: [id])
+  assetId      String?
+  asset        Asset?          @relation(fields: [assetId], references: [id])
+  quantity     Decimal?        @db.Decimal(18, 8)
+  price        Decimal?        @db.Decimal(18, 8)
+  totalAmount  Decimal         @db.Decimal(18, 2)
+  date         DateTime
+  notes        String?
+  ledgerEntries LedgerEntry[]
+  incomeEvents  IncomeEvent[]
+  createdAt    DateTime        @default(now())
+}
+
+model LedgerEntry {
+  id            String      @id @default(cuid())
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id])
+  accountId     String
+  account       Account     @relation(fields: [accountId], references: [id])
+  debit         Decimal?    @db.Decimal(18, 2)
+  credit        Decimal?    @db.Decimal(18, 2)
+  balanceAfter  Decimal     @db.Decimal(18, 2)
+  createdAt     DateTime    @default(now())
+}
+
+// ─── Proventos e aluguéis ────────────────────────────────────────────────────
+
+enum IncomeType {
+  DIVIDEND
+  JCP
+  FII_RENT
+  COUPON
+  RENTAL
+}
+
+model IncomeEvent {
+  id            String      @id @default(cuid())
+  type          IncomeType
+  transactionId String?
+  transaction   Transaction? @relation(fields: [transactionId], references: [id])
+  accountId     String
+  account       Account     @relation(fields: [accountId], references: [id])
+  assetId       String?
+  asset         Asset?      @relation(fields: [assetId], references: [id])
+  grossAmount   Decimal     @db.Decimal(18, 2)
+  taxAmount     Decimal?    @db.Decimal(18, 2)
+  netAmount     Decimal     @db.Decimal(18, 2)
+  paymentDate   DateTime
+  notes         String?
+  createdAt     DateTime    @default(now())
+}
+
+model RentalReceipt {
+  id           String   @id @default(cuid())
+  propertyName String
+  accountId    String
+  account      Account  @relation(fields: [accountId], references: [id])
+  grossRent    Decimal  @db.Decimal(18, 2)
+  expenses     Decimal? @db.Decimal(18, 2)
+  netRent      Decimal  @db.Decimal(18, 2)
+  paymentDate  DateTime
+  createdAt    DateTime @default(now())
+}
