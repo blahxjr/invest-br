@@ -51,6 +51,11 @@ src/
 │   ├── login/         ← área pública
 │   └── api/auth/      ← NextAuth handler
 ├── components/        ← componentes React reutilizáveis
+│   ├── ui/            ← componentes genéricos
+│   ├── charts/        ← gráficos
+│   ├── cards/         ← cards de domínio
+│   ├── tables/        ← tabelas
+│   └── layout/        ← layout (Sidebar, Header)
 ├── modules/           ← domínio por módulo
 │   ├── accounts/      ← contas (createAccount, getAccountsByPortfolio)
 │   ├── assets/        ← ativos (createAsset, getAssetByTicker, getAllAssetClasses)
@@ -109,7 +114,10 @@ src/
 ## 6. Agentes de IA disponíveis
 
 Este projeto usa agentes especializados por contexto. Cada agente tem arquivo próprio em `.github/agents/`.
-Para ativar um agente: `@workspace #file:'.github/agents/AGENTE.md' [descreva a tarefa]`
+
+**Como ativar**: `@workspace #file:'.github/agents/NOME.md' [descreva a tarefa]`
+
+### Agentes de Processo (fluxo de desenvolvimento)
 
 | Agente | Arquivo | Quando usar |
 |---|---|---|
@@ -119,11 +127,25 @@ Para ativar um agente: `@workspace #file:'.github/agents/AGENTE.md' [descreva a 
 | Reviewer | `.github/agents/reviewer.md` | Revisar mudança antes de commitar |
 | Documenter | `.github/agents/documenter.md` | Atualizar docs, ADRs, memory/, changelog |
 | Memory Manager | `.github/agents/memory-manager.md` | Recuperar ou persistir estado após tarefa |
+| Arquiteto | `.github/agents/arquiteto.md` | Decisões estruturais, ADRs, refatorações |
 | Segurança | `.github/agents/seguranca.md` | Revisar auth, sessões, validação, dados financeiros |
 | Testes | `.github/agents/testes.md` | Gerar ou revisar testes Vitest |
+| Designer UI | `.github/agents/designer-ui.md` | Criar/revisar componentes, telas, design system |
 
 **Fluxo padrão:**
-`Orchestrator → Planner → Implementer → Reviewer → Documenter → Memory Manager`
+`Orchestrator → Planner → Implementer → Reviewer → Segurança → Testes → Documenter → Memory Manager`
+
+### Agentes de Domínio Financeiro
+
+| Agente | Arquivo | Quando usar |
+|---|---|---|
+| Especialista Financeiro | `.github/agents/especialista-financeiro.md` | Validar cálculos, tributação geral, custo médio |
+| Fundos de Investimento | `.github/agents/fundos-investimento.md` | FICs, multimercado, come-cotas, resgate |
+| Fundos Imobiliários | `.github/agents/fundos-imobiliarios.md` | FIIs, CRIs, LCIs, rendimentos, amortização |
+| Criptoativos | `.github/agents/cripto.md` | Cripto, DeFi, staking, permuta, tributação |
+| ETFs e BDRs | `.github/agents/etfs.md` | ETFs nacionais/internacionais, BDRs |
+| Previdência Privada | `.github/agents/previdencia.md` | PGBL, VGBL, portabilidade, tabelas IR |
+| Renda Fixa | `.github/agents/renda-fixa.md` | Tesouro, CDB, LCI/LCA, CRI/CRA, debêntures |
 
 ---
 
@@ -137,10 +159,19 @@ Para ativar um agente: `@workspace #file:'.github/agents/AGENTE.md' [descreva a 
 | Planner | **Claude Sonnet 4.6** | Planejamento estruturado com dependências |
 | Implementer | **Claude Sonnet 4.6** ou **GPT-4.1** | Geração de código TypeScript/Next.js |
 | Reviewer | **Claude Opus 4.6** | Revisão crítica: ledger, idempotência, segurança |
-| Documenter | **Claude Haiku 4.5** ou **GPT-4.1** | Tarefa estruturada — não justifica modelo pesado |
+| Documenter | **Claude Haiku 4.5** | Tarefa estruturada — não justifica modelo pesado |
 | Memory Manager | **Claude Haiku 4.5** | Consolidação de estado — tarefa repetitiva |
+| Arquiteto | **Claude Opus 4.6** | Decisões estruturais exigem raciocínio profundo |
 | Segurança | **Claude Opus 4.6** | Revisão crítica exige máxima atenção |
 | Testes | **Claude Sonnet 4.6** | Testes têm estrutura previsível |
+| Designer UI | **Claude Sonnet 4.6** ou **GPT-4.1** | Geração de componentes TSX/Tailwind |
+| Especialista Financeiro | **Claude Opus 4.6** | Validação de regras financeiras críticas |
+| Fundos de Investimento | **Claude Sonnet 4.6** | Domínio estruturado e regras claras |
+| Fundos Imobiliários | **Claude Sonnet 4.6** | Domínio estruturado e regras claras |
+| Criptoativos | **Claude Sonnet 4.6** | Regras em evolução — Sonnet suficiente |
+| ETFs e BDRs | **Claude Sonnet 4.6** | Domínio estruturado |
+| Previdência Privada | **Claude Sonnet 4.6** | Tabelas e regras bem definidas |
+| Renda Fixa | **Claude Opus 4.6** | Cálculos de indexadores e edge cases complexos |
 
 ---
 
