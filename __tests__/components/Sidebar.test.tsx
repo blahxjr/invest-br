@@ -25,6 +25,7 @@ describe('Sidebar', () => {
     render(<Sidebar />)
     expect(screen.getAllByText('Dashboard').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Contas').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Instituições').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Ativos').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Movimentações').length).toBeGreaterThan(0)
   })

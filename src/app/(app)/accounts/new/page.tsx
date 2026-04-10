@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
-import { createAccountAction } from './actions'
+import { createAccountAction, getAccountFormData } from './actions'
 
 const accountTypes = [
   { value: 'BROKERAGE', label: 'Corretora' },
@@ -10,7 +10,9 @@ const accountTypes = [
   { value: 'MANUAL', label: 'Manual' },
 ]
 
-export default function NewAccountPage() {
+export default async function NewAccountPage() {
+  const { institutions, portfolios } = await getAccountFormData()
+
   return (
     <div className="max-w-lg">
       <div className="flex items-center gap-3 mb-6">
@@ -61,9 +63,25 @@ export default function NewAccountPage() {
           </div>
 
           <div>
+            <label htmlFor="institutionId" className="block text-sm font-medium text-gray-700 mb-1">
+              Instituição existente
+            </label>
+            <select
+              id="institutionId"
+              name="institutionId"
+              defaultValue=""
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="">Selecionar instituição</option>
+              {institutions.map((institution) => (
+                <option key={institution.id} value={institution.id}>{institution.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
             <label htmlFor="institutionName" className="block text-sm font-medium text-gray-700 mb-1">
-              Instituição
-              <span className="text-gray-400 font-normal ml-1">(opcional)</span>
+              Nova instituição (criação rápida)
             </label>
             <input
               id="institutionName"
@@ -72,6 +90,26 @@ export default function NewAccountPage() {
               placeholder="Ex: XP Investimentos, Nubank, Binance"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+            <p className="text-xs text-gray-500 mt-1">
+              Se você selecionar uma instituição existente, este campo será ignorado.
+            </p>
+          </div>
+
+          <div>
+            <label htmlFor="portfolioId" className="block text-sm font-medium text-gray-700 mb-1">
+              Portfólio
+            </label>
+            <select
+              id="portfolioId"
+              name="portfolioId"
+              defaultValue=""
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="">Portfólio principal automático</option>
+              {portfolios.map((portfolio) => (
+                <option key={portfolio.id} value={portfolio.id}>{portfolio.name}</option>
+              ))}
+            </select>
           </div>
 
           <div className="flex gap-3 pt-2">

@@ -13,6 +13,8 @@ let userId: string
 let portfolioId: string
 let accountId: string
 let petr4Id: string
+let clientId: string
+let institutionId: string
 
 beforeAll(async () => {
   // Cria estrutura mínima de suporte
@@ -26,8 +28,24 @@ beforeAll(async () => {
   })
   portfolioId = portfolio.id
 
+  const client = await prisma.client.create({
+    data: { name: 'Cliente Ledger Teste', userId },
+  })
+  clientId = client.id
+
+  const institution = await prisma.institution.create({
+    data: { name: `Instituição Ledger ${Date.now()}` },
+  })
+  institutionId = institution.id
+
   const account = await prisma.account.create({
-    data: { name: 'Conta XP Teste', type: 'BROKERAGE', portfolioId },
+    data: {
+      name: 'Conta XP Teste',
+      type: 'BROKERAGE',
+      portfolioId,
+      clientId,
+      institutionId,
+    },
   })
   accountId = account.id
 
@@ -42,6 +60,8 @@ afterAll(async () => {
   await prisma.ledgerEntry.deleteMany({ where: { accountId } })
   await prisma.transaction.deleteMany({ where: { accountId } })
   await prisma.account.delete({ where: { id: accountId } })
+  await prisma.client.delete({ where: { id: clientId } })
+  await prisma.institution.delete({ where: { id: institutionId } })
   await prisma.portfolio.delete({ where: { id: portfolioId } })
   await prisma.user.delete({ where: { id: userId } })
   await prisma.$disconnect()

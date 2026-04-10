@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard,
   Wallet,
+  Landmark,
   TrendingUp,
   ArrowLeftRight,
   Menu,
@@ -16,6 +17,7 @@ import clsx from 'clsx'
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/accounts', label: 'Contas', icon: Wallet },
+  { href: '/institutions', label: 'Instituições', icon: Landmark },
   { href: '/assets', label: 'Ativos', icon: TrendingUp },
   { href: '/transactions', label: 'Movimentações', icon: ArrowLeftRight },
 ]

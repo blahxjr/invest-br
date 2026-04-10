@@ -1,9 +1,11 @@
-import { Wallet, Building2 } from 'lucide-react'
+import { Wallet, Building2, FolderKanban, User } from 'lucide-react'
 
 export interface AccountCardProps {
   name: string
   type: string
   institutionName?: string
+  portfolioName?: string | null
+  clientName?: string | null
   balance: number
   transactionCount?: number
 }
@@ -24,6 +26,8 @@ export default function AccountCard({
   name,
   type,
   institutionName,
+  portfolioName,
+  clientName,
   balance,
   transactionCount,
 }: AccountCardProps) {
@@ -47,6 +51,23 @@ export default function AccountCard({
         <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-3">
           <Building2 size={12} />
           <span>{institutionName}</span>
+        </div>
+      )}
+
+      {(portfolioName || clientName) && (
+        <div className="space-y-1 mb-3">
+          {portfolioName && (
+            <div className="flex items-center gap-1.5 text-xs text-gray-500">
+              <FolderKanban size={12} />
+              <span>{portfolioName}</span>
+            </div>
+          )}
+          {clientName && (
+            <div className="flex items-center gap-1.5 text-xs text-gray-500">
+              <User size={12} />
+              <span>{clientName}</span>
+            </div>
+          )}
         </div>
       )}
 

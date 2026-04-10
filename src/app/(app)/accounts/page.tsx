@@ -14,17 +14,22 @@ async function AccountsContent() {
   const session = await auth()
   const userId = session?.user?.id
 
-  const portfolio = await prisma.portfolio.findFirst({
-    where: userId ? { userId } : undefined,
-    include: {
-      accounts: {
-        include: { institution: true },
+  const accounts = userId
+    ? await prisma.account.findMany({
+        where: {
+          OR: [
+            { portfolio: { userId } },
+            { client: { userId } },
+          ],
+        },
+        include: {
+          institution: true,
+          client: true,
+          portfolio: true,
+        },
         orderBy: { createdAt: 'asc' },
-      },
-    },
-  })
-
-  const accounts = portfolio?.accounts ?? []
+      })
+    : []
 
   // Busca saldo e contagem de transações para cada conta
   const accountsWithData = await Promise.all(
@@ -58,6 +63,8 @@ async function AccountsContent() {
               name={acc.name}
               type={acc.type}
               institutionName={acc.institution?.name}
+              portfolioName={acc.portfolio?.name}
+              clientName={acc.client?.name}
               balance={acc.balance}
               transactionCount={acc.transactionCount}
             />

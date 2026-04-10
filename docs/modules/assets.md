@@ -80,6 +80,7 @@ Rodar com: `pnpm db:seed`
 
 - Sem dependências de outros módulos (entidade raiz do catálogo)
 - Futuramente referenciado por `Transaction`, `Position`, `IncomeEvent`
+- Referência cruzada de cadastro: o fluxo operacional de criação de `Account` (com `Client` e `Institution`) é pré-condição para movimentações que consumirão `Asset`.
 
 ## Próximos passos
 
