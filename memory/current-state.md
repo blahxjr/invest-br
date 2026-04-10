@@ -85,3 +85,4 @@ Status: preparação de dados iniciada.
 - AssetIdentifier (múltiplos identificadores por ativo).
 - Importação CSV com idempotência ponta a ponta.
 - Cotações em tempo real e séries históricas.
+
