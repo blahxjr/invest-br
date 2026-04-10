@@ -1,6 +1,8 @@
-import { Decimal } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma'
 import type { TransactionCreateInput, TransactionResult } from './types'
+
+type Decimal = Prisma.Decimal
 
 /**
  * Calcula o saldo atual da conta somando créditos e débitos dos LedgerEntries.
@@ -12,7 +14,7 @@ async function getCurrentBalance(accountId: string, tx: typeof prisma): Promise<
     orderBy: { createdAt: 'desc' },
     select: { balanceAfter: true },
   })
-  return last?.balanceAfter ?? new Decimal(0)
+  return last?.balanceAfter ?? new Prisma.Decimal(0)
 }
 
 /**
@@ -37,7 +39,7 @@ export async function createTransaction(input: TransactionCreateInput): Promise<
     return { ...existing, idempotent: true }
   }
 
-  const totalAmount = new Decimal(input.totalAmount.toString())
+  const totalAmount = new Prisma.Decimal(input.totalAmount.toString())
   const DEBIT_TYPES = ['BUY', 'WITHDRAWAL']
   const isDebit = DEBIT_TYPES.includes(input.type)
 
@@ -55,8 +57,8 @@ export async function createTransaction(input: TransactionCreateInput): Promise<
         type: input.type,
         accountId: input.accountId,
         assetId: input.assetId ?? null,
-        quantity: input.quantity != null ? new Decimal(input.quantity.toString()) : null,
-        price: input.price != null ? new Decimal(input.price.toString()) : null,
+        quantity: input.quantity != null ? new Prisma.Decimal(input.quantity.toString()) : null,
+        price: input.price != null ? new Prisma.Decimal(input.price.toString()) : null,
         totalAmount,
         date: input.date,
         notes: input.notes ?? null,

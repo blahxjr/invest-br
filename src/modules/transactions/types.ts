@@ -1,4 +1,6 @@
-import type { TransactionType, Decimal } from '@prisma/client'
+import type { TransactionType, Prisma } from '@prisma/client'
+
+type Decimal = Prisma.Decimal
 
 export type TransactionCreateInput = {
   referenceId: string     // chave de idempotência — deve ser única por operação de negócio

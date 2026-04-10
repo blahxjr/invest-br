@@ -1,4 +1,6 @@
-import type { IncomeType, Decimal } from '@prisma/client'
+import type { IncomeType, Prisma } from '@prisma/client'
+
+type Decimal = Prisma.Decimal
 
 export type IncomeEventCreateInput = {
   type: IncomeType

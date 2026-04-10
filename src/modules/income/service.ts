@@ -1,6 +1,8 @@
-import { Decimal } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma'
 import type { IncomeEventCreateInput, RentalReceiptCreateInput, AssetPosition } from './types'
+
+type Decimal = Prisma.Decimal
 
 // ── Income Events ─────────────────────────────────────────────────────────────
 
@@ -11,9 +13,9 @@ export async function createIncomeEvent(input: IncomeEventCreateInput) {
       accountId: input.accountId,
       assetId: input.assetId ?? null,
       transactionId: input.transactionId ?? null,
-      grossAmount: new Decimal(input.grossAmount.toString()),
-      taxAmount: input.taxAmount != null ? new Decimal(input.taxAmount.toString()) : null,
-      netAmount: new Decimal(input.netAmount.toString()),
+      grossAmount: new Prisma.Decimal(input.grossAmount.toString()),
+      taxAmount: input.taxAmount != null ? new Prisma.Decimal(input.taxAmount.toString()) : null,
+      netAmount: new Prisma.Decimal(input.netAmount.toString()),
       paymentDate: input.paymentDate,
       notes: input.notes ?? null,
     },
@@ -34,7 +36,7 @@ export async function getTotalIncomeByAccount(accountId: string): Promise<Decima
     where: { accountId },
     select: { netAmount: true },
   })
-  return events.reduce((sum, e) => sum.plus(e.netAmount), new Decimal(0))
+  return events.reduce((sum, e) => sum.plus(e.netAmount), new Prisma.Decimal(0))
 }
 
 // ── Rental Receipts ───────────────────────────────────────────────────────────
@@ -44,9 +46,9 @@ export async function createRentalReceipt(input: RentalReceiptCreateInput) {
     data: {
       propertyName: input.propertyName,
       accountId: input.accountId,
-      grossRent: new Decimal(input.grossRent.toString()),
-      expenses: input.expenses != null ? new Decimal(input.expenses.toString()) : null,
-      netRent: new Decimal(input.netRent.toString()),
+      grossRent: new Prisma.Decimal(input.grossRent.toString()),
+      expenses: input.expenses != null ? new Prisma.Decimal(input.expenses.toString()) : null,
+      netRent: new Prisma.Decimal(input.netRent.toString()),
       paymentDate: input.paymentDate,
     },
     include: { account: true },
@@ -90,27 +92,27 @@ export async function calculatePositionByAsset(
     select: { type: true, quantity: true, price: true, totalAmount: true },
   })
 
-  let quantity = new Decimal(0)
-  let averageCost = new Decimal(0)
-  let totalCost = new Decimal(0)
+  let quantity = new Prisma.Decimal(0)
+  let averageCost = new Prisma.Decimal(0)
+  let totalCost = new Prisma.Decimal(0)
   let buyCount = 0
   let sellCount = 0
 
   for (const tx of transactions) {
-    const qty = tx.quantity ?? new Decimal(0)
-    const price = tx.price ?? (qty.isZero() ? new Decimal(0) : new Decimal(tx.totalAmount).div(qty))
+    const qty = tx.quantity ?? new Prisma.Decimal(0)
+    const price = tx.price ?? (qty.isZero() ? new Prisma.Decimal(0) : new Prisma.Decimal(tx.totalAmount).div(qty))
 
     if (tx.type === 'BUY') {
       // Custo médio ponderado
       const newTotalCost = totalCost.plus(qty.times(price))
       const newQuantity = quantity.plus(qty)
-      averageCost = newQuantity.isZero() ? new Decimal(0) : newTotalCost.div(newQuantity)
+      averageCost = newQuantity.isZero() ? new Prisma.Decimal(0) : newTotalCost.div(newQuantity)
       quantity = newQuantity
       totalCost = newTotalCost
       buyCount++
     } else if (tx.type === 'SELL') {
       quantity = quantity.minus(qty)
-      totalCost = quantity.isZero() ? new Decimal(0) : averageCost.times(quantity)
+      totalCost = quantity.isZero() ? new Prisma.Decimal(0) : averageCost.times(quantity)
       sellCount++
     }
   }
