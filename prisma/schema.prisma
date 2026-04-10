@@ -31,11 +31,24 @@ model User {
   emailVerified DateTime?
   name          String?
   image         String?
+  clients       Client[]
   portfolios    Portfolio[]
   sessions      Session[]
   accounts      AuthAccount[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+}
+
+model Client {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  name      String
+  accounts  Account[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId])
 }
 
 model AuthAccount {
@@ -93,18 +106,20 @@ model Institution {
 }
 
 model Account {
-  id            String        @id @default(cuid())
-  name          String
-  type          AccountType
-  portfolioId   String
-  portfolio     Portfolio     @relation(fields: [portfolioId], references: [id])
-  institutionId String?
-  institution   Institution?  @relation(fields: [institutionId], references: [id])
-  transactions  Transaction[]
-  ledgerEntries LedgerEntry[]
-  incomeEvents  IncomeEvent[]
+  id             String         @id @default(cuid())
+  name           String
+  type           AccountType
+  clientId       String
+  client         Client         @relation(fields: [clientId], references: [id])
+  portfolioId    String?
+  portfolio      Portfolio?     @relation(fields: [portfolioId], references: [id])
+  institutionId  String
+  institution    Institution    @relation(fields: [institutionId], references: [id])
+  transactions   Transaction[]
+  ledgerEntries  LedgerEntry[]
+  incomeEvents   IncomeEvent[]
   rentalReceipts RentalReceipt[]
-  createdAt     DateTime      @default(now())
+  createdAt      DateTime       @default(now())
 }
 
 // ─── Catálogo de ativos ──────────────────────────────────────────────────────
@@ -121,27 +136,37 @@ enum AssetCategory {
   CASH
 }
 
+enum InvestmentHorizon {
+  SHORT
+  MEDIUM
+  LONG
+}
+
 model AssetClass {
-  id          String        @id @default(cuid())
-  name        String
-  code        String?       @unique
-  description String?
-  assets      Asset[]
-  createdAt   DateTime      @default(now())
+  id                     String             @id @default(cuid())
+  name                   String
+  code                   String?            @unique
+  description            String?
+  recommendedHorizonBase InvestmentHorizon?
+  assets                 Asset[]
+  createdAt              DateTime           @default(now())
 }
 
 model Asset {
-  id           String        @id @default(cuid())
-  name         String
-  ticker       String?       @unique
-  isin         String?       @unique
-  cnpj         String?       @unique
-  category     AssetCategory
-  assetClassId String
-  assetClass   AssetClass    @relation(fields: [assetClassId], references: [id])
-  transactions Transaction[]
-  incomeEvents IncomeEvent[]
-  createdAt    DateTime      @default(now())
+  id                 String             @id @default(cuid())
+  name               String
+  ticker             String?            @unique
+  isin               String?            @unique
+  cnpj               String?            @unique
+  category           AssetCategory
+  currency           String             @default("BRL")
+  country            String?
+  recommendedHorizon InvestmentHorizon?
+  assetClassId       String
+  assetClass         AssetClass         @relation(fields: [assetClassId], references: [id])
+  transactions       Transaction[]
+  incomeEvents       IncomeEvent[]
+  createdAt          DateTime           @default(now())
 }
 
 // ─── Ledger ──────────────────────────────────────────────────────────────────

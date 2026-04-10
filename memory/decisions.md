@@ -1,6 +1,6 @@
 # Decisões técnicas
 
-**Última atualização:** 2026-04-08
+**Última atualização:** 2026-04-09
 
 ## DEC-001 — Prisma 7 requer driver adapter
 
@@ -64,3 +64,36 @@
 **Contexto:** Por padrão, NextAuth v5 não expõe `user.id` na sessão do cliente/Server Components.
 **Decisão:** Adicionar callback `session({ session, user }) { session.user.id = user.id }` em `auth.ts`.
 **Consequência:** `session.user.id` disponível em todos os Server Components e Server Actions para filtrar dados por usuário. Tipo aumentado em `src/types/next-auth.d.ts`.
+
+## DEC-014 — Vínculos obrigatórios de Account no fluxo de Cadastro
+
+**Contexto:** O fluxo de Cadastro de Instituições e Contas evoluiu para suportar escopo multi-entidade com validação forte de vínculo no service e nas Server Actions.
+
+**Decisão:**
+- `Account.clientId` é obrigatório e deve referenciar `Client` existente.
+- `Account.institutionId` é obrigatório e deve referenciar `Institution` existente.
+- `Account.portfolioId` permanece opcional (`null` permitido), porém quando informado deve pertencer ao mesmo usuário do `Client` da conta.
+- No fluxo de `accounts/new`, o sistema pode criar/reutilizar `Client` principal e `Portfolio` padrão para o usuário autenticado antes de criar a conta.
+
+**Consequência:**
+- Substitui operacionalmente a diretriz antiga da DEC-004 que tratava `institutionId` como opcional.
+- Reduz inconsistência de dados em contas sem instituição.
+- Mantém flexibilidade para contas sem portfolio específico, preservando evolução gradual do módulo de carteiras.
+
+## DEC-015 — Insights V1 com cálculo on-the-fly
+
+**Contexto:** O módulo de Insights/Rebalanceamento precisa sinalizar concentração, diversificação e desalinhamento de horizonte com entrega rápida e baixo custo de manutenção na V1.
+
+**Decisão:**
+- Na V1, os insights serão calculados on-the-fly no backend, sem persistência em tabela `Insight`.
+- Não será criado modelo `Position` persistido nesta etapa de preparação de dados.
+- Parâmetros padrão da V1:
+	- concentração por ativo: 25%
+	- concentração por classe: 50%
+	- concentração por moeda/país: 70%
+	- desalinhamento de horizonte: 30%
+
+**Consequência:**
+- Reduz complexidade de schema e operação na V1.
+- Permite evoluir para snapshot/cache em versão futura, se necessário.
+- Exige atenção a desempenho e regras de fallback no serviço de insights.
