@@ -57,9 +57,9 @@ export default async function InsightsProfilesPage() {
           Nenhum perfil criado ainda.
         </div>
       ) : (
-        profiles.map((profile) => {
-          const profileRules = catalog.map((item) => {
-            const rule = profile.rules.find((r) => r.insightType.code === item.code)
+        profiles.map((profile: (typeof profiles)[number]) => {
+          const profileRules = catalog.map((item: (typeof catalog)[number]) => {
+            const rule = profile.rules.find((r: (typeof profile.rules)[number]) => r.insightType.code === item.code)
             return {
               code: item.code,
               label: item.label,
@@ -124,7 +124,7 @@ export default async function InsightsProfilesPage() {
                       className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                     >
                       <option value="" disabled>Selecione um cliente</option>
-                      {clients.map((client) => (
+                      {clients.map((client: (typeof clients)[number]) => (
                         <option key={client.id} value={client.id}>
                           {client.name}
                           {client.insightConfigProfileId === profile.id ? ' (atribuído)' : ''}
@@ -148,7 +148,7 @@ export default async function InsightsProfilesPage() {
                       className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                     >
                       <option value="" disabled>Selecione uma carteira</option>
-                      {portfolios.map((portfolio) => (
+                      {portfolios.map((portfolio: (typeof portfolios)[number]) => (
                         <option key={portfolio.id} value={portfolio.id}>
                           {portfolio.name}
                           {portfolio.insightConfigProfileId === profile.id ? ' (atribuído)' : ''}
