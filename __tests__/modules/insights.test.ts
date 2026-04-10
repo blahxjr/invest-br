@@ -179,7 +179,7 @@ describe('Módulo Insights', () => {
         assetClassId: assetClass2.id,
         currency: 'BRL',
         country: 'BR',
-        category: 'BOND',
+        category: 'FIXED_INCOME',
       },
     })
 
@@ -368,6 +368,7 @@ describe('Módulo Insights', () => {
     expect(concentracao?.severity).toBe('info') // excessPercentage < 0.1
   })
 })
+
 
 
 
