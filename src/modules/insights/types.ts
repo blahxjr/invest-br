@@ -9,7 +9,9 @@
  * Referência: docs/modules/insights.md, DEC-015
  */
 
-import { Decimal } from '@prisma/client/runtime/library'
+import type { Prisma } from '@prisma/client'
+
+type Decimal = Prisma.Decimal
 
 /**
  * Enum dos tipos de insight detectáveis.
@@ -29,6 +31,26 @@ export enum InsightType {
   /** Um ativo com horizonte recomendado SHORT/MEDIUM está em carteira com objetivo LONG (discrepância > 30%) */
   HORIZONTE_DESALINHADO = 'HORIZONTE_DESALINHADO',
 }
+
+/**
+ * Escopo de perfil de configuração.
+ */
+export type InsightProfileScope = 'GLOBAL' | 'USER' | 'CLIENT' | 'PORTFOLIO'
+
+/**
+ * Severidade configurável na regra.
+ */
+export type InsightSeverity = 'info' | 'warning' | 'critical'
+
+/**
+ * Códigos de insight suportados no catálogo (persistência).
+ */
+export const INSIGHT_TYPE_CODES = {
+  [InsightType.CONCENTRACAO_ATIVO]: 'CONCENTRACAO_ATIVO',
+  [InsightType.CONCENTRACAO_CLASSE]: 'CONCENTRACAO_CLASSE',
+  [InsightType.CONCENTRACAO_MOEDA_PAIS]: 'CONCENTRACAO_MOEDA_PAIS',
+  [InsightType.HORIZONTE_DESALINHADO]: 'HORIZONTE_DESALINHADO',
+} as const
 
 /**
  * Entrada para obter insights de um cliente ou carteira.
@@ -169,6 +191,30 @@ export type Insight = {
 }
 
 /**
+ * Regra efetiva de detecção para cada tipo.
+ */
+export type EffectiveInsightRule = {
+  type: InsightType
+  enabled: boolean
+  threshold: number
+  severity?: InsightSeverity
+  sourceScope: InsightProfileScope | 'CATALOG_DEFAULT'
+}
+
+/**
+ * Configuração efetiva usada pelo motor no cálculo atual.
+ */
+export type EffectiveInsightsConfig = Record<InsightType, EffectiveInsightRule>
+
+/**
+ * Perfil efetivo escolhido pela precedência de escopo.
+ */
+export type ResolvedInsightProfile = {
+  profileId?: string
+  scope: InsightProfileScope | 'CATALOG_DEFAULT'
+}
+
+/**
  * Thresholds de detecção (DEC-015).
  *
  * Valores padrão para V1; paralelamente os limites podem ser customizáveis em V2+.
@@ -179,3 +225,13 @@ export const INSIGHT_THRESHOLDS = {
   concentracaoMoedaPais: 0.70, // 70%
   desalinhamentoHorizonte: 0.30, // 30% de discrepância
 } as const
+
+/**
+ * Mapeamento fallback local para manter comportamento V1 mesmo sem catálogo seeded.
+ */
+export const INSIGHT_DEFAULT_THRESHOLD_BY_TYPE: Record<InsightType, number> = {
+  [InsightType.CONCENTRACAO_ATIVO]: INSIGHT_THRESHOLDS.concentracaoAtivo,
+  [InsightType.CONCENTRACAO_CLASSE]: INSIGHT_THRESHOLDS.concentracaoClasse,
+  [InsightType.CONCENTRACAO_MOEDA_PAIS]: INSIGHT_THRESHOLDS.concentracaoMoedaPais,
+  [InsightType.HORIZONTE_DESALINHADO]: INSIGHT_THRESHOLDS.desalinhamentoHorizonte,
+}

@@ -104,6 +104,102 @@ async function main() {
   }
   console.log(`✅ ${etfs.length} ETFs cadastrados`)
 
+  // Evita criar múltiplas instâncias de client Decimal e mantém seed idempotente
+  const defaultInsightTypes = [
+    {
+      code: 'CONCENTRACAO_ATIVO',
+      label: 'Concentração por ativo',
+      description: 'Alerta quando um único ativo ultrapassa o limite configurado.',
+      defaultThreshold: '0.2500',
+    },
+    {
+      code: 'CONCENTRACAO_CLASSE',
+      label: 'Concentração por classe',
+      description: 'Alerta quando uma classe de ativos ultrapassa o limite configurado.',
+      defaultThreshold: '0.5000',
+    },
+    {
+      code: 'CONCENTRACAO_MOEDA_PAIS',
+      label: 'Concentração por moeda/país',
+      description: 'Alerta quando moeda ou país ultrapassa o limite configurado.',
+      defaultThreshold: '0.7000',
+    },
+    {
+      code: 'HORIZONTE_DESALINHADO',
+      label: 'Horizonte desalinhado',
+      description: 'Alerta quando o horizonte dos ativos diverge do objetivo da carteira.',
+      defaultThreshold: '0.3000',
+    },
+  ] as const
+
+  for (const insightType of defaultInsightTypes) {
+    await prisma.insightType.upsert({
+      where: { code: insightType.code },
+      update: {
+        label: insightType.label,
+        description: insightType.description,
+        defaultThreshold: insightType.defaultThreshold,
+        defaultSeverity: 'WARNING',
+        isActive: true,
+      },
+      create: {
+        code: insightType.code,
+        label: insightType.label,
+        description: insightType.description,
+        defaultThreshold: insightType.defaultThreshold,
+        defaultSeverity: 'WARNING',
+        isActive: true,
+      },
+    })
+  }
+
+  const globalProfile = await prisma.insightConfigProfile.upsert({
+    where: { id: 'global-insight-profile-default' },
+    update: {
+      name: 'Padrão Global V1',
+      scope: 'GLOBAL',
+      isSystemDefault: true,
+      isActive: true,
+    },
+    create: {
+      id: 'global-insight-profile-default',
+      name: 'Padrão Global V1',
+      description: 'Perfil global padrão para fallback dos insights na V1.',
+      scope: 'GLOBAL',
+      isSystemDefault: true,
+      isActive: true,
+    },
+  })
+
+  const allInsightTypes = await prisma.insightType.findMany({
+    where: { isActive: true },
+  })
+
+  for (const insightType of allInsightTypes) {
+    await prisma.insightConfigRule.upsert({
+      where: {
+        profileId_insightTypeId: {
+          profileId: globalProfile.id,
+          insightTypeId: insightType.id,
+        },
+      },
+      update: {
+        enabled: true,
+        thresholdOverride: insightType.defaultThreshold,
+        severityOverride: 'WARNING',
+      },
+      create: {
+        profileId: globalProfile.id,
+        insightTypeId: insightType.id,
+        enabled: true,
+        thresholdOverride: insightType.defaultThreshold,
+        severityOverride: 'WARNING',
+      },
+    })
+  }
+
+  console.log(`✅ ${allInsightTypes.length} tipos de insight seedados`)
+
   console.log('🎉 Seed concluído com sucesso!')
 }
 

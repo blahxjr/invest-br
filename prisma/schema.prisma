@@ -33,6 +33,9 @@ model User {
   image         String?
   clients       Client[]
   portfolios    Portfolio[]
+  insightConfigProfileId    String?
+  insightConfigProfile      InsightConfigProfile?  @relation("UserInsightProfile", fields: [insightConfigProfileId], references: [id])
+  insightConfigProfilesOwned InsightConfigProfile[] @relation("InsightProfileOwner")
   sessions      Session[]
   accounts      AuthAccount[]
   createdAt     DateTime  @default(now())
@@ -44,11 +47,14 @@ model Client {
   userId    String
   user      User      @relation(fields: [userId], references: [id])
   name      String
+  insightConfigProfileId String?
+  insightConfigProfile   InsightConfigProfile? @relation("ClientInsightProfile", fields: [insightConfigProfileId], references: [id])
   accounts  Account[]
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
   @@index([userId])
+  @@index([insightConfigProfileId])
 }
 
 model AuthAccount {
@@ -92,9 +98,13 @@ model Portfolio {
   description String?
   userId      String
   user        User      @relation(fields: [userId], references: [id])
+  insightConfigProfileId String?
+  insightConfigProfile   InsightConfigProfile? @relation("PortfolioInsightProfile", fields: [insightConfigProfileId], references: [id])
   accounts    Account[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  @@index([insightConfigProfileId])
 }
 
 model Institution {
@@ -142,6 +152,19 @@ enum InvestmentHorizon {
   LONG
 }
 
+enum InsightProfileScope {
+  GLOBAL
+  USER
+  CLIENT
+  PORTFOLIO
+}
+
+enum InsightSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
 model AssetClass {
   id                     String             @id @default(cuid())
   name                   String
@@ -167,6 +190,54 @@ model Asset {
   transactions       Transaction[]
   incomeEvents       IncomeEvent[]
   createdAt          DateTime           @default(now())
+}
+
+model InsightType {
+  id               String             @id @default(cuid())
+  code             String             @unique
+  label            String
+  description      String?
+  defaultThreshold Decimal            @db.Decimal(6, 4)
+  defaultSeverity  InsightSeverity    @default(WARNING)
+  isActive         Boolean            @default(true)
+  rules            InsightConfigRule[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+}
+
+model InsightConfigProfile {
+  id                String              @id @default(cuid())
+  name              String
+  description       String?
+  scope             InsightProfileScope
+  isActive          Boolean             @default(true)
+  isSystemDefault   Boolean             @default(false)
+  ownerUserId       String?
+  ownerUser         User?               @relation("InsightProfileOwner", fields: [ownerUserId], references: [id])
+  rules             InsightConfigRule[]
+  assignedUsers     User[]              @relation("UserInsightProfile")
+  assignedClients   Client[]            @relation("ClientInsightProfile")
+  assignedPortfolios Portfolio[]        @relation("PortfolioInsightProfile")
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@index([scope, ownerUserId])
+}
+
+model InsightConfigRule {
+  id                String              @id @default(cuid())
+  profileId         String
+  profile           InsightConfigProfile @relation(fields: [profileId], references: [id])
+  insightTypeId     String
+  insightType       InsightType         @relation(fields: [insightTypeId], references: [id])
+  enabled           Boolean             @default(true)
+  thresholdOverride Decimal?            @db.Decimal(6, 4)
+  severityOverride  InsightSeverity?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@unique([profileId, insightTypeId])
+  @@index([insightTypeId])
 }
 
 // ─── Ledger ──────────────────────────────────────────────────────────────────

@@ -97,3 +97,19 @@
 - Reduz complexidade de schema e operação na V1.
 - Permite evoluir para snapshot/cache em versão futura, se necessário.
 - Exige atenção a desempenho e regras de fallback no serviço de insights.
+
+## DEC-016 — Configuração de Insights por perfil com precedência de escopo
+
+**Contexto:** A V1 de Insights precisava manter o motor on-the-fly da DEC-015, porém com habilitação e thresholds configuráveis para investidor e consultor.
+
+**Decisão:**
+- Introduzir catálogo `InsightType` com defaults da DEC-015.
+- Introduzir `InsightConfigProfile` e `InsightConfigRule` para governar `enabled` e `threshold` por tipo.
+- Resolver configuração efetiva na ordem: `Portfolio > Client > User > Global`.
+- Se não houver perfil/regra aplicável, usar fallback para default do catálogo `InsightType`.
+- Manter cálculo on-the-fly no serviço de insights (sem snapshot persistido).
+
+**Consequência:**
+- Permite personalização por escopo sem alterar a base do motor.
+- Mantém compatibilidade com comportamento atual mesmo sem configurações criadas.
+- Abre caminho para telas PF e consultor sem introduzir complexidade de compliance/snapshot na V1.

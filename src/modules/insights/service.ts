@@ -10,7 +10,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid'
-import { Decimal } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 
 import {
@@ -18,8 +18,11 @@ import {
   ConsolidatedPosition,
   Insight,
   InsightType,
-  INSIGHT_THRESHOLDS,
+  EffectiveInsightsConfig,
 } from './types'
+import { resolveEffectiveInsightsConfig } from './config-service'
+
+type Decimal = Prisma.Decimal
 
 /**
  * Obter insights para um cliente (ou carteira específica).
@@ -50,6 +53,12 @@ export async function getInsightsForClient(
   if (!client) {
     return []
   }
+
+  const effectiveConfig = await resolveEffectiveInsightsConfig(
+    client.userId,
+    clientId,
+    portfolioId
+  )
 
   // 2. Buscar todas as carteiras do cliente (ou apenas a especificada)
   let portfolios
@@ -115,7 +124,7 @@ export async function getInsightsForClient(
   // 6. Calcular patrimônio total
   const patrimonioTotal = positions.reduce(
     (sum, pos) => sum.plus(pos.totalCost),
-    new Decimal(0)
+    new Prisma.Decimal(0)
   )
 
   if (patrimonioTotal.lte(0)) {
@@ -126,39 +135,56 @@ export async function getInsightsForClient(
   const insights: Insight[] = []
 
   // Detectar concentração por ativo
-  insights.push(
-    ...detectConcentracaoAtivo(positions, patrimonioTotal, clientId, portfolioId)
-  )
+  if (effectiveConfig[InsightType.CONCENTRACAO_ATIVO].enabled) {
+    insights.push(
+      ...detectConcentracaoAtivo(
+        positions,
+        patrimonioTotal,
+        clientId,
+        effectiveConfig,
+        portfolioId
+      )
+    )
+  }
 
   // Detectar concentração por classe
-  insights.push(
-    ...detectConcentracaoClasse(
-      positions,
-      patrimonioTotal,
-      clientId,
-      portfolioId
+  if (effectiveConfig[InsightType.CONCENTRACAO_CLASSE].enabled) {
+    insights.push(
+      ...detectConcentracaoClasse(
+        positions,
+        patrimonioTotal,
+        clientId,
+        effectiveConfig,
+        portfolioId
+      )
     )
-  )
+  }
 
   // Detectar concentração por moeda/país
-  insights.push(
-    ...detectConcentracaoMoedaPais(
-      positions,
-      patrimonioTotal,
-      clientId,
-      portfolioId
+  if (effectiveConfig[InsightType.CONCENTRACAO_MOEDA_PAIS].enabled) {
+    insights.push(
+      ...detectConcentracaoMoedaPais(
+        positions,
+        patrimonioTotal,
+        clientId,
+        effectiveConfig,
+        portfolioId
+      )
     )
-  )
+  }
 
   // Detectar desalinhamento de horizonte
-  insights.push(
-    ...detectDesalinhamentoHorizonte(
-      positions,
-      patrimonioTotal,
-      clientId,
-      portfolioId
+  if (effectiveConfig[InsightType.HORIZONTE_DESALINHADO].enabled) {
+    insights.push(
+      ...detectDesalinhamentoHorizonte(
+        positions,
+        patrimonioTotal,
+        clientId,
+        effectiveConfig,
+        portfolioId
+      )
     )
-  )
+  }
 
   return insights
 }
@@ -200,9 +226,9 @@ function consolidarPosicoes(
         ticker: tx.asset.ticker,
         assetClassId: tx.asset.assetClassId,
         assetClassName: tx.asset.assetClass.name,
-        quantity: new Decimal(0),
-        avgCost: new Decimal(0),
-        totalCost: new Decimal(0),
+        quantity: new Prisma.Decimal(0),
+        avgCost: new Prisma.Decimal(0),
+        totalCost: new Prisma.Decimal(0),
         currency: tx.asset.currency || 'BRL',
         country: tx.asset.country,
         recommendedHorizon: tx.asset.recommendedHorizon,
@@ -213,21 +239,21 @@ function consolidarPosicoes(
     }
 
     // Atualizar quantidade e preço médio
-    const currentQty = new Decimal(position.quantity)
-    const currentValue = new Decimal(position.totalCost)
-    const txQty = new Decimal(tx.quantity)
-    const txPrice = tx.price ? new Decimal(tx.price) : new Decimal(0)
+    const currentQty = new Prisma.Decimal(position.quantity)
+    const currentValue = new Prisma.Decimal(position.totalCost)
+    const txQty = new Prisma.Decimal(tx.quantity)
+    const txPrice = tx.price ? new Prisma.Decimal(tx.price) : new Prisma.Decimal(0)
 
     if (tx.type === 'BUY') {
       const newQty = currentQty.plus(txQty)
       const newValue = currentValue.plus(txQty.times(txPrice))
       position.quantity = newQty
       position.totalCost = newValue
-      position.avgCost = newQty.isZero() ? new Decimal(0) : newValue.dividedBy(newQty)
+      position.avgCost = newQty.isZero() ? new Prisma.Decimal(0) : newValue.dividedBy(newQty)
     } else if (tx.type === 'SELL') {
       const newQty = currentQty.minus(txQty)
       // No SELL, mantém o avg cost anterior (custo médio não muda)
-      position.quantity = newQty.isNegative() ? new Decimal(0) : newQty
+      position.quantity = newQty.isNegative() ? new Prisma.Decimal(0) : newQty
       position.totalCost = position.quantity.times(position.avgCost)
     }
 
@@ -238,8 +264,8 @@ function consolidarPosicoes(
       accountPosition = {
         accountId: tx.accountId,
         accountName: account?.name || 'Unknown',
-        quantity: new Decimal(0),
-        totalCost: new Decimal(0),
+        quantity: new Prisma.Decimal(0),
+        totalCost: new Prisma.Decimal(0),
       }
       position.accounts.push(accountPosition)
     }
@@ -252,7 +278,7 @@ function consolidarPosicoes(
     } else if (tx.type === 'SELL') {
       accountPosition.quantity = accountPosition.quantity.minus(txQty)
       if (accountPosition.quantity.isNegative()) {
-        accountPosition.quantity = new Decimal(0)
+        accountPosition.quantity = new Prisma.Decimal(0)
       }
       accountPosition.totalCost = accountPosition.quantity.times(position.avgCost)
     }
@@ -271,10 +297,11 @@ function detectConcentracaoAtivo(
   positions: ConsolidatedPosition[],
   patrimonioTotal: Decimal,
   clientId: string,
+  effectiveConfig: EffectiveInsightsConfig,
   portfolioId?: string | null
 ): Insight[] {
   const insights: Insight[] = []
-  const threshold = INSIGHT_THRESHOLDS.concentracaoAtivo
+  const threshold = effectiveConfig[InsightType.CONCENTRACAO_ATIVO].threshold
 
   for (const pos of positions) {
     const percentage = pos.totalCost.dividedBy(patrimonioTotal).toNumber()
@@ -326,10 +353,11 @@ function detectConcentracaoClasse(
   positions: ConsolidatedPosition[],
   patrimonioTotal: Decimal,
   clientId: string,
+  effectiveConfig: EffectiveInsightsConfig,
   portfolioId?: string | null
 ): Insight[] {
   const insights: Insight[] = []
-  const threshold = INSIGHT_THRESHOLDS.concentracaoClasse
+  const threshold = effectiveConfig[InsightType.CONCENTRACAO_CLASSE].threshold
 
   // Agregar por classe
   const classeMap = new Map<string, { name: string; total: Decimal; assets: ConsolidatedPosition[] }>()
@@ -341,7 +369,7 @@ function detectConcentracaoClasse(
     if (!classData) {
       classData = {
         name: pos.assetClassName,
-        total: new Decimal(0),
+        total: new Prisma.Decimal(0),
         assets: [],
       }
       classeMap.set(classKey, classData)
@@ -400,10 +428,11 @@ function detectConcentracaoMoedaPais(
   positions: ConsolidatedPosition[],
   patrimonioTotal: Decimal,
   clientId: string,
+  effectiveConfig: EffectiveInsightsConfig,
   portfolioId?: string | null
 ): Insight[] {
   const insights: Insight[] = []
-  const threshold = INSIGHT_THRESHOLDS.concentracaoMoedaPais
+  const threshold = effectiveConfig[InsightType.CONCENTRACAO_MOEDA_PAIS].threshold
 
   // Agregar por moeda
   const moedaMap = new Map<string, { assets: ConsolidatedPosition[]; total: Decimal }>()
@@ -415,7 +444,7 @@ function detectConcentracaoMoedaPais(
     const currency = pos.currency || 'BRL'
     let moedaData = moedaMap.get(currency)
     if (!moedaData) {
-      moedaData = { assets: [], total: new Decimal(0) }
+      moedaData = { assets: [], total: new Prisma.Decimal(0) }
       moedaMap.set(currency, moedaData)
     }
     moedaData.total = moedaData.total.plus(pos.totalCost)
@@ -425,7 +454,7 @@ function detectConcentracaoMoedaPais(
     if (pos.country) {
       let paisData = paisMap.get(pos.country)
       if (!paisData) {
-        paisData = { assets: [], total: new Decimal(0) }
+        paisData = { assets: [], total: new Prisma.Decimal(0) }
         paisMap.set(pos.country, paisData)
       }
       paisData.total = paisData.total.plus(pos.totalCost)
@@ -525,10 +554,11 @@ function detectDesalinhamentoHorizonte(
   positions: ConsolidatedPosition[],
   patrimonioTotal: Decimal,
   clientId: string,
+  effectiveConfig: EffectiveInsightsConfig,
   portfolioId?: string | null
 ): Insight[] {
   const insights: Insight[] = []
-  const threshold = INSIGHT_THRESHOLDS.desalinhamentoHorizonte
+  const threshold = effectiveConfig[InsightType.HORIZONTE_DESALINHADO].threshold
 
   // Para V1, assumimos horizonte de carteira = LONG (default conservador)
   // Em V2+, isso viria de Portfolio.recommendedHorizon

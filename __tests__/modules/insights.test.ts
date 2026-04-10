@@ -15,6 +15,54 @@ import { prisma } from '@/lib/prisma'
 import { getInsightsForClient } from '@/modules/insights/service'
 import { InsightType } from '@/modules/insights/types'
 
+async function seedInsightCatalogDefaults() {
+  const defaultTypes = [
+    { code: 'CONCENTRACAO_ATIVO', threshold: '0.2500' },
+    { code: 'CONCENTRACAO_CLASSE', threshold: '0.5000' },
+    { code: 'CONCENTRACAO_MOEDA_PAIS', threshold: '0.7000' },
+    { code: 'HORIZONTE_DESALINHADO', threshold: '0.3000' },
+  ] as const
+
+  for (const item of defaultTypes) {
+    await prisma.insightType.upsert({
+      where: { code: item.code },
+      update: {
+        label: item.code,
+        defaultThreshold: item.threshold,
+        defaultSeverity: 'WARNING',
+        isActive: true,
+      },
+      create: {
+        code: item.code,
+        label: item.code,
+        defaultThreshold: item.threshold,
+        defaultSeverity: 'WARNING',
+        isActive: true,
+      },
+    })
+  }
+
+  const profile = await prisma.insightConfigProfile.create({
+    data: {
+      name: 'Global Test Profile',
+      scope: 'GLOBAL',
+      isSystemDefault: true,
+    },
+  })
+
+  const types = await prisma.insightType.findMany()
+  for (const type of types) {
+    await prisma.insightConfigRule.create({
+      data: {
+        profileId: profile.id,
+        insightTypeId: type.id,
+        enabled: true,
+        thresholdOverride: type.defaultThreshold,
+      },
+    })
+  }
+}
+
 describe('Módulo Insights', () => {
   let clientId: string
   let portfolioId: string
@@ -25,12 +73,24 @@ describe('Módulo Insights', () => {
 
   beforeEach(async () => {
     // Limpar dados de teste anteriores
+    await prisma.insightConfigRule.deleteMany()
+    await prisma.insightConfigProfile.deleteMany()
+    await prisma.insightType.deleteMany()
     await prisma.transaction.deleteMany()
     await prisma.account.deleteMany()
     await prisma.asset.deleteMany()
     await prisma.assetClass.deleteMany()
     await prisma.portfolio.deleteMany()
     await prisma.client.deleteMany()
+    await prisma.user.deleteMany({
+      where: {
+        email: {
+          contains: 'test-insights-',
+        },
+      },
+    })
+
+    await seedInsightCatalogDefaults()
 
     // Criar usuário de teste
     const user = await prisma.user.create({
@@ -366,6 +426,157 @@ describe('Módulo Insights', () => {
     )
 
     expect(concentracao?.severity).toBe('info') // excessPercentage < 0.1
+  })
+
+  it('Deve respeitar enabled=false e não gerar insight para o tipo desativado', async () => {
+    await prisma.transaction.create({
+      data: {
+        accountId,
+        assetId: assetId1,
+        type: 'BUY',
+        quantity: 100,
+        price: 100,
+        totalAmount: 100 * 100,
+        date: new Date(),
+        referenceId: `ref-enabled-off-1-${Date.now()}`,
+      },
+    })
+
+    await prisma.transaction.create({
+      data: {
+        accountId,
+        assetId: assetId2,
+        type: 'BUY',
+        quantity: 50,
+        price: 100,
+        totalAmount: 100 * 100,
+        date: new Date(),
+        referenceId: `ref-enabled-off-2-${Date.now()}`,
+      },
+    })
+
+    const globalProfile = await prisma.insightConfigProfile.findFirstOrThrow({
+      where: { scope: 'GLOBAL', isSystemDefault: true },
+    })
+    const typeAtivo = await prisma.insightType.findUniqueOrThrow({
+      where: { code: 'CONCENTRACAO_ATIVO' },
+    })
+
+    await prisma.insightConfigRule.update({
+      where: {
+        profileId_insightTypeId: {
+          profileId: globalProfile.id,
+          insightTypeId: typeAtivo.id,
+        },
+      },
+      data: { enabled: false },
+    })
+
+    const insights = await getInsightsForClient(clientId)
+    const concentracaoAtivo = insights.find(
+      (i) => i.type === InsightType.CONCENTRACAO_ATIVO
+    )
+
+    expect(concentracaoAtivo).toBeUndefined()
+  })
+
+  it('Deve usar threshold override do perfil efetivo', async () => {
+    const profile = await prisma.insightConfigProfile.create({
+      data: {
+        name: 'Perfil User Test',
+        scope: 'USER',
+      },
+    })
+
+    const client = await prisma.client.findUniqueOrThrow({ where: { id: clientId } })
+    await prisma.user.update({
+      where: { id: client.userId },
+      data: { insightConfigProfileId: profile.id },
+    })
+
+    const typeAtivo = await prisma.insightType.findUniqueOrThrow({
+      where: { code: 'CONCENTRACAO_ATIVO' },
+    })
+
+    await prisma.insightConfigRule.create({
+      data: {
+        profileId: profile.id,
+        insightTypeId: typeAtivo.id,
+        enabled: true,
+        thresholdOverride: '0.6000',
+      },
+    })
+
+    await prisma.transaction.create({
+      data: {
+        accountId,
+        assetId: assetId1,
+        type: 'BUY',
+        quantity: 55,
+        price: 100,
+        totalAmount: 100 * 55,
+        date: new Date(),
+        referenceId: `ref-override-threshold-1-${Date.now()}`,
+      },
+    })
+
+    await prisma.transaction.create({
+      data: {
+        accountId,
+        assetId: assetId2,
+        type: 'BUY',
+        quantity: 45,
+        price: 100,
+        totalAmount: 100 * 45,
+        date: new Date(),
+        referenceId: `ref-override-threshold-2-${Date.now()}`,
+      },
+    })
+
+    const insights = await getInsightsForClient(clientId)
+    const concentracaoAtivo = insights.find(
+      (i) => i.type === InsightType.CONCENTRACAO_ATIVO
+    )
+
+    expect(concentracaoAtivo).toBeUndefined()
+  })
+
+  it('Deve fazer fallback para default do InsightType quando não há regra', async () => {
+    await prisma.insightConfigRule.deleteMany()
+
+    await prisma.transaction.create({
+      data: {
+        accountId,
+        assetId: assetId1,
+        type: 'BUY',
+        quantity: 60,
+        price: 100,
+        totalAmount: 100 * 60,
+        date: new Date(),
+        referenceId: `ref-fallback-1-${Date.now()}`,
+      },
+    })
+
+    await prisma.transaction.create({
+      data: {
+        accountId,
+        assetId: assetId2,
+        type: 'BUY',
+        quantity: 40,
+        price: 100,
+        totalAmount: 100 * 40,
+        date: new Date(),
+        referenceId: `ref-fallback-2-${Date.now()}`,
+      },
+    })
+
+    const insights = await getInsightsForClient(clientId)
+    const concentracaoAtivo = insights.find(
+      (i) => i.type === InsightType.CONCENTRACAO_ATIVO
+    )
+
+    expect(concentracaoAtivo).toBeDefined()
+    expect(concentracaoAtivo?.metrics.threshold).toBeCloseTo(0.25)
   })
 })
 

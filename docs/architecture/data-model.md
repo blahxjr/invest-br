@@ -215,6 +215,87 @@ Relacionamentos:
 
 AssetIdentifier N‑1 Asset
 
+4.4. Configuração de Insights
+O módulo de Insights V1 mantém cálculo on-the-fly, porém passa a ler parâmetros configuráveis por escopo.
+
+Entidades principais:
+
+InsightType
+
+Catálogo dos tipos de insight suportados.
+
+Campos principais:
+
+id
+
+code (único, ex.: CONCENTRACAO_ATIVO)
+
+label
+
+defaultThreshold (percentual base, ex.: 0.25)
+
+defaultSeverity (INFO, WARNING, CRITICAL)
+
+isActive
+
+Relacionamentos:
+
+InsightType 1‑N InsightConfigRule
+
+InsightConfigProfile
+
+Perfil de configuração por escopo.
+
+Campos principais:
+
+id
+
+name
+
+scope (GLOBAL, USER, CLIENT, PORTFOLIO)
+
+isActive
+
+isSystemDefault
+
+ownerUserId? (quem criou o perfil)
+
+Relacionamentos:
+
+InsightConfigProfile 1‑N InsightConfigRule
+
+InsightConfigProfile 1‑N User (atribuição opcional)
+
+InsightConfigProfile 1‑N Client (atribuição opcional)
+
+InsightConfigProfile 1‑N Portfolio (atribuição opcional)
+
+InsightConfigRule
+
+Regra por tipo de insight dentro de um perfil.
+
+Campos principais:
+
+id
+
+profileId
+
+insightTypeId
+
+enabled
+
+thresholdOverride?
+
+severityOverride?
+
+Índices:
+
+UNIQUE (profileId, insightTypeId)
+
+Relação de precedência na resolução:
+
+Portfolio > Client > User > Global > default do catálogo InsightType.
+
 5. Transações e ledger
 5.1. Transaction
 Evento econômico percebido pelo usuário.
