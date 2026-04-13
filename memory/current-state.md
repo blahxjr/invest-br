@@ -124,3 +124,23 @@ Status: implementado — listagem e cadastro de IncomeEvent
 - Edição/exclusão de proventos
 - Paginação além dos 50 mais recentes
 
+## Módulo Posições
+
+Status: implementado — listagem de posições abertas da carteira
+
+### Escopo entregue
+- src/app/(app)/positions/page.tsx — listagem de posições abertas
+	- Query otimizada: 1 query BUY/SELL com IN accountIds (sem N+1)
+	- Custo médio ponderado calculado em memória
+	- Resumo: total de posições + custo total da carteira
+	- Grid responsivo com PositionCard (1/2/3 colunas)
+	- Sem cotação em tempo real (fase futura)
+- Sidebar atualizada com item Posições (entre Movimentações e Proventos)
+- Sidebar.test.tsx atualizado com asserção do item Posições
+
+### Fora de escopo nesta fase
+- Cotação em tempo real (preço atual do ativo)
+- Variação percentual com preço de mercado
+- Filtro por categoria de ativo
+- Paginação
+

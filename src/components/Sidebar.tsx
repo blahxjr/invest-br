@@ -8,6 +8,7 @@ import {
   Landmark,
   TrendingUp,
   ArrowLeftRight,
+  BarChart3,
   Menu,
   X,
 } from 'lucide-react'
@@ -20,6 +21,7 @@ const navItems = [
   { href: '/institutions', label: 'Instituições', icon: Landmark },
   { href: '/assets', label: 'Ativos', icon: TrendingUp },
   { href: '/transactions', label: 'Movimentações', icon: ArrowLeftRight },
+  { href: '/positions', label: 'Posições', icon: BarChart3 },
   { href: '/income', label: 'Proventos', icon: TrendingUp },
   { href: '/dashboard/insights/config', label: 'Regras Insights', icon: TrendingUp },
   { href: '/dashboard/insights/profiles', label: 'Perfis Insights', icon: TrendingUp },

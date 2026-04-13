@@ -28,6 +28,7 @@ describe('Sidebar', () => {
     expect(screen.getAllByText('Instituições').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Ativos').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Movimentações').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Posições').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Proventos').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Regras Insights').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Perfis Insights').length).toBeGreaterThan(0)
