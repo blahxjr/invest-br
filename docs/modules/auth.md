@@ -130,7 +130,7 @@ export async function createXxxAction(formData: FormData) {
 | `EMAIL_SERVER_HOST` | Host SMTP                            |
 | `EMAIL_SERVER_PORT` | Porta SMTP (587 para TLS, 465 para SSL) |
 | `EMAIL_SERVER_USER` | Usuário SMTP                         |
-| `EMAIL_SERVER_PASS` | Senha SMTP                           |
+| `EMAIL_SERVER_PASSWORD` | Senha SMTP                       |
 | `EMAIL_FROM`      | Remetente (ex: `"InvestBR" <no-reply@investbr.app>`) |
 
 ## Decisões de Design

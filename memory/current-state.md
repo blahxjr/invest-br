@@ -92,3 +92,10 @@ Status: preparação de dados iniciada.
 - Importação CSV com idempotência ponta a ponta.
 - Cotações em tempo real e séries históricas.
 
+## Build e Qualidade
+
+**Última validação:** 2026-04-12  
+**Build TypeScript:** ✅ Limpo — `ignoreBuildErrors` removido de next.config.ts  
+**Testes:** ✅ 96 passed, 0 failed  
+**Documentação SMTP:** ✅ Alinhada — variável correta é EMAIL_SERVER_PASSWORD
+
