@@ -1,6 +1,6 @@
 # Estado atual do projeto
 
-**Última atualização:** 2026-04-12
+**Última atualização:** 2026-04-13
 
 ## Stack confirmada
 - Prisma ORM 7.7.0 + PostgreSQL (investbr)
@@ -10,10 +10,11 @@
 - NextAuth v5 (magic link com Nodemailer + sessions em banco)
 - Vitest 4.1.3 + Testing Library (jsdom em testes de componente)
 - TypeScript + alias @/*
+- xlsx (SheetJS) ^0.18.5 — leitura de planilhas B3 em Server Actions
 
 ## Módulo Cadastro: Instituições e Contas
 
-Status: iniciado e implementado (backend, frontend e testes).
+Status: implementado e estabilizado.
 
 ### Escopo entregue
 - Cadastro de Institution com create/list/update.
@@ -49,22 +50,22 @@ Status: iniciado e implementado (backend, frontend e testes).
 ## Schema e migrations
 - Institution e Account: migration 20260408002729_institutions_accounts
 - Restrições e ajustes de vínculo: migration 20260409120000_add_client_and_account_constraints
+- BDR adicionado ao enum AssetCategory: migration add_bdr_to_asset_category (2026-04-13)
+
+## Enum AssetCategory (estado atual)
+```
+STOCK | FII | ETF | FIXED_INCOME | FUND | CRYPTO | METAL | REAL_ESTATE | CASH | BDR
+```
+BDR adicionado no Prompt 9 para suportar ativos como ROXO34 importados da planilha de Posição B3.
+Fallback BDR → STOCK removido de src/modules/b3/service.ts.
 
 ## Testes
-- __tests__/modules/institutions.test.ts cobre create/list/update com validações de nome, tipo e duplicidade.
-- __tests__/modules/accounts.test.ts cobre create/list/update com regras de vínculo, escopo e cenários de erro.
-- __tests__/modules/actions.test.ts cobre Server Actions de cadastro/listagem.
-- Suíte estabilizada em 2026-04-12 com fixtures isoladas e cleanup idempotente.
-- Helper de testes compartilhado criado em __tests__/helpers/fixtures.ts (uniqueSuffix, uniqueTicker, safeDeleteMany).
-- Dependência de seed removida dos testes de módulos de transações/rendimentos e dos checks de classes em assets.
-- Testes de componentes estabilizados em 2026-04-12.
-- Componentes com cobertura: IncomeCard, PositionCard, AccountCard, InsightRulesForm, LoginPage, Sidebar, InsightsList/insights.
-- Sidebar.test.tsx atualizado para refletir os 8 itens de navegação atuais.
-- Suíte completa: 96 passed, 0 failed (incluindo componentes).
-- Validação executada 3x sem flakiness:
-	- npx vitest run → 96 passed, 0 failed
-	- npx vitest run --maxWorkers=1 → 96 passed, 0 failed
-	- npx vitest run → 96 passed, 0 failed
+- Suíte completa: **108 passed, 0 failed** (validado em 2026-04-13)
+- Testes do Prompt 8 (Import B3): 10 novos (negociacao, movimentacao, posicao)
+- Testes do Prompt 9 (Posições): 5 novos (algoritmo de custo médio ponderado)
+- Sidebar.test.tsx atualizado para refletir os itens de navegação atuais.
+- Helper de testes compartilhado: __tests__/helpers/fixtures.ts (uniqueSuffix, uniqueTicker, safeDeleteMany).
+- Dependência de seed removida dos testes de módulos.
 
 ## Decisões ativas relacionadas
 - DEC-001: Prisma 7 com adapter pg obrigatório.
@@ -76,41 +77,25 @@ Status: iniciado e implementado (backend, frontend e testes).
 - DEC-011/DEC-012/DEC-013: arquitetura de autenticação e sessão.
 - DEC-014: Account com Client e Institution obrigatórios; Portfolio opcional.
 - DEC-015: Insights V1 calculados on-the-fly, sem tabela Insight persistida.
+- ADR-004: BDR com fallback para STOCK no import (resolvido no Prompt 9).
 
 ## Módulo Insights/Rebalanceamento
 
-Status: preparação de dados iniciada.
+Status: preparação de dados concluída.
 
 ### Escopo de preparação concluído
-- Enum `InvestmentHorizon` adicionado ao schema para suportar análise de horizonte.
-- `Asset` enriquecido com `currency` (default `BRL`), `country` e `recommendedHorizon`.
-- `AssetClass` enriquecido com `recommendedHorizonBase` (fallback de horizonte).
-- Decisão da V1 registrada: cálculo on-the-fly, sem tabela `Insight`.
+- Enum `InvestmentHorizon` adicionado ao schema.
+- `Asset` enriquecido com `currency`, `country` e `recommendedHorizon`.
+- `AssetClass` enriquecido com `recommendedHorizonBase`.
+- Decisão da V1: cálculo on-the-fly, sem tabela `Insight` persistida.
 
 ### Fora de escopo nesta fase
 - Sem modelo `Position` persistido.
 - Sem persistência de snapshots de insight.
 
-## Pendências abertas
-- AssetIdentifier (múltiplos identificadores por ativo).
-- Importação CSV com idempotência ponta a ponta.
-- Cotações em tempo real e séries históricas.
-
-## Build e Qualidade
-
-**Última validação:** 2026-04-12  
-**Build TypeScript:** ✅ Limpo — `ignoreBuildErrors` removido de next.config.ts  
-**Testes:** ✅ 96 passed, 0 failed  
-**Documentação SMTP:** ✅ Alinhada — variável correta é EMAIL_SERVER_PASSWORD
-**Actions pattern:** ✅ Server Actions de insights retornam ActionResult<T>
-(success/error) — sem throw direto para sessão ausente
-**Repositório:** ✅ Arquivos de log e tsconfig.tsbuildinfo removidos do índice git
-**Dashboard:** ✅ getDashboardData otimizado — queries N+1 eliminadas,
-auth obrigatória, patrimônio V1 = custo total das posições
-
 ## Módulo Proventos (Income)
 
-Status: implementado — listagem e cadastro de IncomeEvent
+Status: implementado — listagem e cadastro de IncomeEvent.
 
 ### Escopo entregue
 - src/app/(app)/income/page.tsx — listagem (últimos 50 por portfólio)
@@ -124,23 +109,69 @@ Status: implementado — listagem e cadastro de IncomeEvent
 - Edição/exclusão de proventos
 - Paginação além dos 50 mais recentes
 
-## Módulo Posições
+## Módulo Import B3 (Prompt 8)
 
-Status: implementado — listagem de posições abertas da carteira
+Status: implementado — import de Negociação, Movimentação e Posição.
 
 ### Escopo entregue
-- src/app/(app)/positions/page.tsx — listagem de posições abertas
-	- Query otimizada: 1 query BUY/SELL com IN accountIds (sem N+1)
-	- Custo médio ponderado calculado em memória
-	- Resumo: total de posições + custo total da carteira
-	- Grid responsivo com PositionCard (1/2/3 colunas)
-	- Sem cotação em tempo real (fase futura)
-- Sidebar atualizada com item Posições (entre Movimentações e Proventos)
-- Sidebar.test.tsx atualizado com asserção do item Posições
+- src/modules/b3/parser/ — parsers puros por tipo de planilha (negociacao.ts, movimentacao.ts, posicao.ts)
+- src/modules/b3/service.ts — persistência via createTransaction + upsert de Asset
+- src/app/(app)/import/page.tsx + import-page-client.tsx — UI de upload com 3 cards
+- src/app/(app)/import/actions.ts — Server Actions: importNegociacao, importMovimentacao, importPosicao
+- Sidebar: item "Importar B3" adicionado entre Posições e Proventos
+- Dependência: xlsx (SheetJS) adicionada
+- Idempotência via referenceId garantida em todos os imports
+
+### Tipos de Movimentação ignorados no import
+- Cessão de Direitos, Cessão de Direitos - Solicitada
+- Direito/Direitos de Subscrição, Direitos de Subscrição - Não Exercido
+- Atualização
+
+### Normalização de ticker
+- Tickers fracionários (sufixo F, ex: AGRO3F) → normalizado para AGRO3 antes de busca/criação de Asset
+
+## Módulo Posições (Prompt 9)
+
+Status: implementado — página /positions com custo médio ponderado.
+
+### Escopo entregue
+- src/modules/positions/service.ts — getPositions(userId) + calcPositions() pura
+- src/modules/positions/types.ts — Position, PositionSummary
+- src/app/(app)/positions/page.tsx — Server Component
+- src/app/(app)/positions/positions-page-client.tsx — Client Component com filtros client-side
+- src/app/(app)/positions/positions-summary.tsx — barra de totais (custo total | ativos | cotas)
+- src/app/(app)/positions/position-card.tsx — card individual com badge de categoria
+- Filtros client-side por AssetCategory e AssetClass (sem re-fetch)
+- Sidebar: item "Posições" entre Movimentações e Importar B3
+- Sidebar.test.tsx atualizado
+- Migration BDR aplicada; fallback removido de b3/service.ts
+
+### Algoritmo de custo médio ponderado
+- 1 query única: Transaction BUY/SELL com asset + assetClass aninhados
+- Processamento em memória com Map<assetId, Position>
+- SELL: mantém avgCost, reduz quantity e totalCost
+- Ativos zerados (todos os BUY vendidos) são removidos do resultado
+- Ordenação: maior totalCost primeiro
 
 ### Fora de escopo nesta fase
 - Cotação em tempo real (preço atual do ativo)
 - Variação percentual com preço de mercado
-- Filtro por categoria de ativo
 - Paginação
 
+## Build e Qualidade
+
+**Última validação:** 2026-04-13  
+**Build TypeScript:** ✅ Limpo — `ignoreBuildErrors` removido de next.config.ts  
+**Testes:** ✅ 108 passed, 0 failed  
+**Rotas ativas:** /dashboard, /accounts, /transactions, /income, /positions, /import  
+**Documentação SMTP:** ✅ Alinhada — variável correta é EMAIL_SERVER_PASSWORD  
+**Actions pattern:** ✅ Server Actions retornam ActionResult<T> — sem throw direto  
+**Dashboard:** ✅ getDashboardData otimizado — queries N+1 eliminadas  
+
+## Pendências abertas
+- Cotações em tempo real e séries históricas
+- Variação percentual das posições com preço de mercado
+- AssetIdentifier (múltiplos identificadores por ativo)
+- RentalReceipt (aluguéis de imóveis)
+- Edição/exclusão de transações e proventos
+- Paginação nas listagens
