@@ -13,8 +13,8 @@ async function DashboardContent() {
 
   const stats = [
     {
-      label: 'Patrimônio Total',
-      value: formatCurrency(data.totalPatrimony),
+      label: 'Custo Total da Carteira',
+      value: formatCurrency(data.totalCost),
       icon: Wallet,
       color: 'text-blue-600',
       bg: 'bg-blue-50',

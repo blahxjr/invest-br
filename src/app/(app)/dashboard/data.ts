@@ -1,10 +1,10 @@
 import { prisma } from '@/lib/prisma'
 import { getPositionsByAccount } from '@/modules/income/service'
-import { getIncomeEventsByAccount } from '@/modules/income/service'
 import { auth } from '@/lib/auth'
+import { redirect } from 'next/navigation'
 
 export interface DashboardData {
-  totalPatrimony: number
+  totalCost: number
   positions: {
     ticker: string
     name: string
@@ -32,17 +32,20 @@ function toNumber(d: { toString(): string } | null | undefined): number {
 
 export async function getDashboardData(): Promise<DashboardData> {
   const session = await auth()
-  const userId = session?.user?.id
+  if (!session?.user?.id) {
+    redirect('/login')
+  }
+  const userId = session.user.id
 
-  // Pega o portfolio do usuário autenticado (ou primeiro disponível em dev)
+  // Pega o portfolio do usuário autenticado
   const portfolio = await prisma.portfolio.findFirst({
-    where: userId ? { userId } : undefined,
+    where: { userId },
     include: { accounts: { include: { institution: true } } },
   })
 
   if (!portfolio) {
     return {
-      totalPatrimony: 0,
+      totalCost: 0,
       positions: [],
       recentIncome: [],
       totalIncomeMonth: 0,
@@ -51,6 +54,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   }
 
   const accounts = portfolio.accounts
+  const accountIds = accounts.map((acc) => acc.id)
 
   // Posições de todos as contas
   const allPositionsNested = await Promise.all(
@@ -61,7 +65,14 @@ export async function getDashboardData(): Promise<DashboardData> {
   // Agrega por ativo (ticker) somando quantidades e recalculando custo médio ponderado
   const byTicker = new Map<
     string,
-    { ticker: string; name: string; qty: number; totalCost: number; category: string }
+    {
+      ticker: string
+      name: string
+      qty: number
+      totalCost: number
+      assetId: string
+      category: string
+    }
   >()
 
   for (const pos of allPositions) {
@@ -73,20 +84,32 @@ export async function getDashboardData(): Promise<DashboardData> {
       existing.qty += qty
       existing.totalCost += cost
     } else {
-      // Get asset category
-      const asset = await prisma.asset.findUnique({
-        where: { id: pos.assetId },
-        select: { category: true },
-      })
       byTicker.set(key, {
         ticker: pos.ticker ?? key,
         name: pos.name,
         qty,
         totalCost: cost,
-        category: asset?.category ?? 'STOCK',
+        assetId: pos.assetId,
+        category: 'STOCK',
       })
     }
   }
+
+  const assetIds = Array.from(new Set([...byTicker.values()].map((p) => p.assetId).filter(Boolean)))
+  const assetCategories =
+    assetIds.length > 0
+      ? await prisma.asset.findMany({
+          where: { id: { in: assetIds } },
+          select: { id: true, category: true },
+        })
+      : []
+  const categoryMap = new Map(assetCategories.map((a) => [a.id, a.category]))
+
+  for (const position of byTicker.values()) {
+    position.category = categoryMap.get(position.assetId) ?? 'STOCK'
+  }
+
+  const totalCost = Array.from(byTicker.values()).reduce((sum, p) => sum + p.totalCost, 0)
 
   const positions = Array.from(byTicker.values())
     .map((p) => ({
@@ -100,39 +123,23 @@ export async function getDashboardData(): Promise<DashboardData> {
     .sort((a, b) => b.totalCost - a.totalCost)
     .slice(0, 5)
 
-  // Saldo das contas (ledger)
-  const balances = await Promise.all(
-    accounts.map(async (acc) => {
-      const last = await prisma.ledgerEntry.findFirst({
-        where: { accountId: acc.id },
-        orderBy: { createdAt: 'desc' },
-        select: { balanceAfter: true },
-      })
-      return toNumber(last?.balanceAfter)
-    })
-  )
-  const totalBalance = balances.reduce((s, b) => s + b, 0)
-  const totalPositionsCost = positions.reduce((s, p) => s + p.totalCost, 0)
-  const totalPatrimony = totalBalance + totalPositionsCost
+  // Rendimentos em uma única query para todas as contas
+  const allIncomeRaw =
+    accountIds.length > 0
+      ? await prisma.incomeEvent.findMany({
+          where: { accountId: { in: accountIds } },
+          include: { asset: { select: { ticker: true } } },
+          orderBy: { paymentDate: 'desc' },
+        })
+      : []
 
-  // Rendimentos do mês atual
   const now = new Date()
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-  const incomeThisMonth = await Promise.all(
-    accounts.map(async (acc) => {
-      const events = await getIncomeEventsByAccount(acc.id)
-      return events.filter((e) => new Date(e.paymentDate) >= startOfMonth)
-    })
-  )
-  const allIncomeEvents = incomeThisMonth.flat()
-  const totalIncomeMonth = allIncomeEvents.reduce((s, e) => s + toNumber(e.netAmount), 0)
+  const totalIncomeMonth = allIncomeRaw
+    .filter((e) => new Date(e.paymentDate) >= startOfMonth)
+    .reduce((s, e) => s + toNumber(e.netAmount), 0)
 
-  // Rendimentos recentes (top 5)
-  const allIncomeForRecent = await Promise.all(
-    accounts.map((acc) => getIncomeEventsByAccount(acc.id))
-  )
-  const recentIncome = allIncomeForRecent
-    .flat()
+  const recentIncome = allIncomeRaw
     .sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime())
     .slice(0, 5)
     .map((e) => ({
@@ -145,7 +152,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     }))
 
   return {
-    totalPatrimony,
+    totalCost,
     positions,
     recentIncome,
     totalIncomeMonth,

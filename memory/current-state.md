@@ -101,6 +101,8 @@ Status: preparação de dados iniciada.
 **Actions pattern:** ✅ Server Actions de insights retornam ActionResult<T>
 (success/error) — sem throw direto para sessão ausente
 **Repositório:** ✅ Arquivos de log e tsconfig.tsbuildinfo removidos do índice git
+**Dashboard:** ✅ getDashboardData otimizado — queries N+1 eliminadas,
+auth obrigatória, patrimônio V1 = custo total das posições
 
 ## Módulo Proventos (Income)
 
