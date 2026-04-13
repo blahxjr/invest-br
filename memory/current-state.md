@@ -102,3 +102,19 @@ Status: preparação de dados iniciada.
 (success/error) — sem throw direto para sessão ausente
 **Repositório:** ✅ Arquivos de log e tsconfig.tsbuildinfo removidos do índice git
 
+## Módulo Proventos (Income)
+
+Status: implementado — listagem e cadastro de IncomeEvent
+
+### Escopo entregue
+- src/app/(app)/income/page.tsx — listagem (últimos 50 por portfólio)
+- src/app/(app)/income/new/page.tsx — formulário de cadastro
+- src/app/(app)/income/new/actions.ts — createIncomeEventAction, getAccountsForUser, getAllAssetsForIncome
+- src/components/IncomeEventForm.tsx — Client Component de formulário
+- Sidebar atualizada com item Proventos
+
+### Fora de escopo nesta fase
+- RentalReceipt: apenas na iteração seguinte
+- Edição/exclusão de proventos
+- Paginação além dos 50 mais recentes
+

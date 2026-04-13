@@ -20,6 +20,7 @@ const navItems = [
   { href: '/institutions', label: 'Instituições', icon: Landmark },
   { href: '/assets', label: 'Ativos', icon: TrendingUp },
   { href: '/transactions', label: 'Movimentações', icon: ArrowLeftRight },
+  { href: '/income', label: 'Proventos', icon: TrendingUp },
   { href: '/dashboard/insights/config', label: 'Regras Insights', icon: TrendingUp },
   { href: '/dashboard/insights/profiles', label: 'Perfis Insights', icon: TrendingUp },
 ]
