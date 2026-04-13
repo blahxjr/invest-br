@@ -98,4 +98,7 @@ Status: preparação de dados iniciada.
 **Build TypeScript:** ✅ Limpo — `ignoreBuildErrors` removido de next.config.ts  
 **Testes:** ✅ 96 passed, 0 failed  
 **Documentação SMTP:** ✅ Alinhada — variável correta é EMAIL_SERVER_PASSWORD
+**Actions pattern:** ✅ Server Actions de insights retornam ActionResult<T>
+(success/error) — sem throw direto para sessão ausente
+**Repositório:** ✅ Arquivos de log e tsconfig.tsbuildinfo removidos do índice git
 

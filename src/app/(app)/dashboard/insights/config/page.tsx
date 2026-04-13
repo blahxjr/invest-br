@@ -1,10 +1,32 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { InsightRulesForm } from '@/components/InsightRulesForm'
 import { getMyInsightRulesAction, saveMyInsightRulesAction } from './actions'
 
 export default async function InsightsConfigPage() {
-  const rules = await getMyInsightRulesAction()
+  const result = await getMyInsightRulesAction()
+
+  if (!result.success) {
+    if (result.error === 'UNAUTHORIZED') {
+      redirect('/login')
+    }
+
+    redirect('/dashboard')
+  }
+
+  const saveAction = async (formData: FormData) => {
+    'use server'
+
+    const saveResult = await saveMyInsightRulesAction(formData)
+    if (!saveResult.success) {
+      if (saveResult.error === 'UNAUTHORIZED') {
+        redirect('/login')
+      }
+
+      redirect('/dashboard')
+    }
+  }
 
   return (
     <div className="max-w-4xl">
@@ -24,7 +46,7 @@ export default async function InsightsConfigPage() {
       </div>
 
       <div className="rounded-xl border border-gray-200 bg-white p-6">
-        <InsightRulesForm rules={rules} action={saveMyInsightRulesAction} />
+        <InsightRulesForm rules={result.data} action={saveAction} />
       </div>
     </div>
   )

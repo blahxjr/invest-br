@@ -10,3 +10,13 @@ out/
 .env.*.local
 
 /generated/prisma
+
+# Logs de teste e saídas temporárias
+test_output.log
+test-output.txt
+final_test.log
+test_final_debug.txt
+test_insights_components.log
+
+# Artefatos de build TypeScript
+tsconfig.tsbuildinfo

@@ -6,7 +6,9 @@ import {
   getMyInsightRules,
   saveMyInsightRules,
   InsightRuleInput,
+  type InsightRuleView,
 } from '@/modules/insights/config-service'
+import type { ActionResult } from '@/types/actions'
 
 function parseRulesFromFormData(formData: FormData): InsightRuleInput[] {
   const entries = Array.from(formData.entries())
@@ -29,19 +31,22 @@ function parseRulesFromFormData(formData: FormData): InsightRuleInput[] {
   })
 }
 
-export async function getMyInsightRulesAction() {
+export async function getMyInsightRulesAction(): Promise<ActionResult<InsightRuleView[]>> {
   const session = await auth()
   if (!session?.user?.id) {
-    throw new Error('Não autenticado')
+    console.warn('[insights/config] getMyInsightRulesAction: sessão ausente')
+    return { success: false, error: 'UNAUTHORIZED' }
   }
 
-  return getMyInsightRules(session.user.id)
+  const data = await getMyInsightRules(session.user.id)
+  return { success: true, data }
 }
 
-export async function saveMyInsightRulesAction(formData: FormData) {
+export async function saveMyInsightRulesAction(formData: FormData): Promise<ActionResult<void>> {
   const session = await auth()
   if (!session?.user?.id) {
-    throw new Error('Não autenticado')
+    console.warn('[insights/config] saveMyInsightRulesAction: sessão ausente')
+    return { success: false, error: 'UNAUTHORIZED' }
   }
 
   const rules = parseRulesFromFormData(formData)
@@ -49,4 +54,6 @@ export async function saveMyInsightRulesAction(formData: FormData) {
 
   revalidatePath('/dashboard/insights')
   revalidatePath('/dashboard/insights/config')
+
+  return { success: true, data: undefined }
 }
