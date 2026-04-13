@@ -4,6 +4,10 @@
 
 Este documento consolida a estrutura operacional para desenvolvimento de um sistema de gerenciamento de investimentos voltado ao investidor brasileiro, inspirado conceitualmente em um projeto modular como o Wealthfolio, mas reposicionado para uma stack web-first com Next.js, TypeScript e PostgreSQL.[cite:2][cite:3] O plano parte de práticas de ledger financeiro rastreável em PostgreSQL, uso disciplinado de GitHub Copilot com instruções persistentes, e uma arquitetura de múltiplos agents com um agent orquestrador/supervisor no topo do fluxo.[cite:49][cite:51][cite:64][cite:70][cite:78][cite:90]
 
+## Como executar localmente
+
+- Guia rapido de execucao: [run.md](run.md)
+
 ## Decisões-base
 
 | Tema | Decisão |
