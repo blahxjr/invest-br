@@ -10,10 +10,9 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { Decimal } from '@prisma/client'
-import { prisma } from '@/lib/prisma'
-import { getInsightsForClient } from '@/modules/insights/service'
-import { InsightType } from '@/modules/insights/types'
+import { prisma } from '../../src/lib/prisma'
+import { getInsightsForClient } from '../../src/modules/insights/service'
+import { InsightType } from '../../src/modules/insights/types'
 import { safeDeleteMany, uniqueName, uniqueSuffix, uniqueTicker } from '../helpers/fixtures'
 
 async function seedInsightCatalogDefaults() {
