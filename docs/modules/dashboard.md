@@ -1,160 +1,175 @@
-# Dashboard e Telas Iniciais — Fase 4
+# Módulo: Dashboard
 
-**Última atualização:** 2026-04-07
+**Última atualização:** 2026-04-13 (v2 — Prompt 10)
 
 ## Visão Geral
 
-Implementação do frontend Next.js 16 com App Router, Tailwind CSS v4 e componentes React para o investidor brasileiro.
+Página principal do sistema. Exibe o patrimônio consolidado da carteira, KPIs financeiros, gráfico de alocação por categoria, Top 5 posições e últimos proventos.
+
+Rota: `/dashboard`
+
+---
 
 ## Estrutura de Arquivos
 
 ```
 src/
   app/
-    layout.tsx              — Layout raiz com sidebar responsivo
-    page.tsx                — Redirect automático para /dashboard
-    globals.css             — Tailwind v4 (@import "tailwindcss")
-    dashboard/
-      page.tsx              — Visão geral: patrimônio, top 5 posições, rendimentos
-      data.ts               — Server-side data fetching (getDashboardData)
-    accounts/
-      page.tsx              — Lista de contas com saldo e contagem de transações
-    assets/
-      page.tsx              — Catálogo de ativos agrupado por classe
-    transactions/
-      page.tsx              — Tabela de movimentações (últimas 50)
+    (app)/
+      dashboard/
+        data.ts               ← getDashboardData(userId) + calcAllocation() pura
+        page.tsx              ← Server Component (busca dados + serializa Decimal)
+        dashboard-client.tsx  ← Client Component wrapper
   components/
-    Sidebar.tsx             — Navegação lateral + mobile drawer
-    PositionCard.tsx        — Card de posição (ticker, qty, custo médio, variação)
-    IncomeCard.tsx          — Card de rendimento (tipo, bruto, líquido, data)
-    AccountCard.tsx         — Card de conta (nome, tipo, saldo, transações)
+    AllocationChart.tsx       ← Donut chart SVG nativo
+    PositionCard.tsx          ← Card de posição (existente)
+    IncomeCard.tsx            ← Card de provento (existente)
+  __tests__/
+    modules/
+      dashboard.test.ts       ← 4 testes de calcAllocation() (sem banco)
+    components/
+      AllocationChart.test.tsx ← 3 testes do componente
 ```
 
-## Telas e Rotas
+---
 
-| Rota | Descrição |
-|------|-----------|
-| `/` | Redirect → `/dashboard` |
-| `/dashboard` | KPI cards + Top 5 posições + Últimos rendimentos |
-| `/accounts` | Grid de contas com saldo real do ledger |
-| `/assets` | Catálogo agrupado por AssetClass c/ chips de categoria |
-| `/transactions` | Tabela de movimentações c/ tipo colorido |
+## Dados: `getDashboardData(userId)`
 
-## Componentes
+### Queries executadas (3 no total — sem N+1)
 
-### PositionCard
-- Exibe: ticker, nome, quantidade, custo médio, custo total, valor atual, variação (R$ e %)
-- Variação verde (TrendingUp) se positiva, vermelha (TrendingDown) se negativa
-- Props: `{ ticker, name, quantity, averageCost, currentValue?, category }`
-
-### IncomeCard
-- Exibe: tipo de rendimento (traduzido), ticker, valor bruto/líquido, IR retido, data
-- Suporta: DIVIDEND, JCP, FII_RENT, COUPON, RENTAL
-- Props: `{ type, ticker?, grossAmount, netAmount, paymentDate }`
-
-### AccountCard
-- Exibe: nome, tipo de conta (traduzido), instituição, saldo, contagem de movimentações
-- Tipos: BROKERAGE → "Corretora", BANK → "Banco", etc.
-- Props: `{ name, type, institutionName?, balance, transactionCount? }`
-
-### Sidebar
-- Desktop: barra lateral fixa 256px
-- Mobile: header fixo com drawer overlay
-- Ativo: item destacado em azul baseado em `usePathname()`
-- Links: Dashboard | Contas | Ativos | Movimentações
-
-## Stack Configurada
-
-- **Next.js 16.2.2** (App Router + Server Components)
-- **React 19.2.4**
-- **Tailwind CSS 4.2.2** + `@tailwindcss/postcss`
-- **Tailwind configuração:** sem `tailwind.config.js` (v4 usa CSS direta)
-- **lucide-react** para ícones
-- **clsx** para classes condicionais
-
-## Configurações
-
-### next.config.ts
-```ts
-serverComponentsExternalPackages: ['@prisma/client', '@prisma/adapter-pg', 'pg']
+```
+1. getPositions(userId)          ← 1 query (Transaction BUY/SELL + asset + assetClass)
+2. prisma.incomeEvent.findMany   ← últimos 5 proventos
+3. prisma.incomeEvent.aggregate  ← soma net do mês corrente
 ```
 
-### postcss.config.js
-```js
-plugins: { '@tailwindcss/postcss': {} }
-```
+### Retorno
 
-### tsconfig.json
-- Target: ES2017, moduleResolution: bundler
-- Path alias: `@/*` → `./src/*`
-
-## Padrão de Data Fetching
-
-As pages usam **React Server Components** com `Suspense`:
-
-```tsx
-async function PageContent() {
-  const data = await prisma.model.findMany(...)
-  return <ComponenteUI data={data} />
-}
-
-export default function Page() {
-  return (
-    <Suspense fallback={<Skeleton />}>
-      <PageContent />
-    </Suspense>
-  )
+```typescript
+{
+  totalPortfolioCost:  Decimal   // patrimônio = soma de totalCost das posições
+  assetCount:          number    // ativos distintos com posição aberta
+  totalQuantity:       Decimal   // soma de cotas
+  totalIncomeMonth:    Decimal   // proventos líquidos do mês
+  top5Positions:       Position[] // 5 maiores por totalCost
+  allocationByCategory: AllocationItem[]
+  recentIncome:        IncomeEvent[]
 }
 ```
+
+---
+
+## `calcAllocation(positions)` — Função Pura
+
+Exportada separadamente para ser testável sem banco.
+
+```typescript
+export function calcAllocation(positions: Position[]): AllocationItem[]
+
+// AllocationItem:
+// { category: string; value: Decimal; percentage: Decimal }
+
+// Algoritmo:
+// 1. Soma totalCost de todos os ativos → total
+// 2. Agrupa por category com Map
+// 3. Calcula percentage = (value / total) * 100
+// 4. Ordena por value decrescente
+```
+
+---
+
+## Serialização Decimal (DEC-016)
+
+Next.js não serializa `Decimal` entre Server e Client Components.  
+O `page.tsx` converte antes de passar props para `DashboardClient`:
+
+```typescript
+// No page.tsx (Server Component):
+const allocationForClient = data.allocationByCategory.map(item => ({
+  category:   item.category,
+  value:      item.value.toFixed(2),      // string
+  percentage: item.percentage.toFixed(1), // string
+}))
+
+const kpis = {
+  totalPortfolioCost: data.totalPortfolioCost.toFixed(2), // string
+  assetCount:         data.assetCount,                    // number (ok)
+  totalIncomeMonth:   data.totalIncomeMonth.toFixed(2),   // string
+}
+```
+
+---
+
+## Layout do Dashboard
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│  KPIs: [Patrimônio] [Ativos] [Proventos/mês]            │
+├───────────────────────────────────┬─────────────────────────┤
+│  AllocationChart (donut + legenda) │  Top 5 Posições    │
+├───────────────────────────────────┴─────────────────────────┤
+│  Últimos Proventos [IncomeCard x5]                       │
+└───────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## `AllocationChart` — Componente
+
+```typescript
+// 'use client'
+// Props: items: { category: string; value: string; percentage: string }[]
+```
+
+**Implementação:** SVG nativo (sem biblioteca externa)  
+**Formato:** Donut chart + legenda lateral
+
+**Cores por categoria:**
+
+| Category | Cor | Hex |
+|----------|-----|-----|
+| STOCK | Azul | `#3b82f6` |
+| FII | Verde | `#22c55e` |
+| ETF | Amarelo | `#eab308` |
+| BDR | Roxo | `#a855f7` |
+| Outros | Cinza | `#94a3b8` |
+
+**Estado vazio:** exibe mensagem "sem posições" quando `items` está vazio.
+
+---
 
 ## Testes
 
-**21 testes de componentes** em `__tests__/components/`:
+### `dashboard.test.ts` — 4 testes de `calcAllocation` (sem banco)
 
-| Arquivo | Testes |
-|---------|--------|
-| PositionCard.test.tsx | 5 |
-| IncomeCard.test.tsx | 7 |
-| AccountCard.test.tsx | 6 |
-| Sidebar.test.tsx | 3 |
+| Caso | Validação |
+|------|-----------|
+| Percentual correto | STOCK 30%, FII 70% |
+| Ordenação | maior value primeiro |
+| Carteira vazia | retorna array vazio |
+| Agrupamento | múltiplos ativos da mesma categoria somam value |
 
-Configuração jsdom: cada arquivo com `// @vitest-environment jsdom`
+### `AllocationChart.test.tsx` — 3 testes de componente
 
-## Como Rodar
+| Caso | Validação |
+|------|-----------|
+| Legendas | renderiza categoria + percentual |
+| SVG | elemento svg presente no DOM |
+| Estado vazio | mensagem "sem posições" |
 
-```bash
-# Instalar dependências
-pnpm install
+---
 
-# Popular banco de dados
-pnpm db:seed
+## Histórico de Versões
 
-# Iniciar servidor de desenvolvimento
-pnpm dev
-# → http://localhost:3000/dashboard
+| Versão | Prompt | O que mudou |
+|--------|--------|-------------|
+| v1 | Prompt 4 | Dashboard inicial: KPIs + Top 5 + Proventos (com N+1) |
+| v2 | Prompt 10 | Refactor N+1 → getPositions(); AllocationChart; DEC-016 serialização |
 
-# Rodar todos os testes (46 testes)
-pnpm test
-```
+---
 
-## Esquema de Dados: Dashboard
+## Fora de Escopo (fase atual)
 
-```
-getDashboardData()
-  ├── prisma.portfolio.findFirst()
-  │     └── accounts[]
-  ├── getPositionsByAccount(accountId) × N contas
-  │     → agrega por ticker (custo médio ponderado)
-  │     → top 5 por totalCost
-  ├── prisma.ledgerEntry últimos saldos × N contas
-  │     → totalPatrimony = Σ saldos + Σ custo posições
-  ├── getIncomeEventsByAccount(accountId) × N contas
-  │     → filtra mês atual → totalIncomeMonth
-  └── últimos 5 eventos de renda → recentIncome[]
-```
-
-## Decisões Técnicas
-
-- **DEC-008**: Next.js 16 + `serverComponentsExternalPackages` para Prisma rodarem em Server Components sem bundle
-- **DEC-009**: Tailwind v4 sem `tailwind.config.js` — configuração puramente CSS com `@import "tailwindcss"`
-- **DEC-010**: `environmentMatchGlobs` do vitest não funciona confiável — usar `// @vitest-environment jsdom` por arquivo
+- Cotações em tempo real
+- Variação % com preço de mercado
+- Snapshot histórico de patrimônio (evolução no tempo)
