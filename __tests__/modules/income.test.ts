@@ -10,6 +10,7 @@ import {
   calculatePositionByAsset,
   getPositionsByAccount,
 } from '../../src/modules/income/service'
+import { safeDeleteMany, uniqueName, uniqueSuffix, uniqueTicker } from '../helpers/fixtures'
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 let userId: string
@@ -19,27 +20,64 @@ let petr4Id: string
 let xpml11Id: string
 let clientId: string
 let institutionId: string
+let assetClassId: string
+const suiteId = uniqueSuffix()
 
 beforeAll(async () => {
   const user = await prisma.user.create({
-    data: { email: `income-test-${Date.now()}@invest.br`, name: 'Income Test User' },
+    data: { email: `income-test-${suiteId}@invest.br`, name: uniqueName('Income Test User') },
   })
   userId = user.id
 
   const portfolio = await prisma.portfolio.create({
-    data: { name: 'Carteira Income Teste', userId },
+    data: { name: uniqueName('Carteira Income Teste'), userId },
   })
   portfolioId = portfolio.id
 
   const client = await prisma.client.create({
-    data: { name: 'Cliente Income Teste', userId },
+    data: { name: uniqueName('Cliente Income Teste'), userId },
   })
   clientId = client.id
 
   const institution = await prisma.institution.create({
-    data: { name: `Instituição Income ${Date.now()}` },
+    data: { name: uniqueName('Instituição Income') },
   })
   institutionId = institution.id
+
+  const assetClass = await prisma.assetClass.create({
+    data: {
+      name: uniqueName('Classe Income'),
+      code: `INC_${suiteId.slice(0, 6).toUpperCase()}`,
+      description: 'Classe de ativos para testes do módulo income',
+    },
+  })
+  assetClassId = assetClass.id
+
+  const stockAsset = await prisma.asset.create({
+    data: {
+      name: uniqueName('Ação Income'),
+      ticker: uniqueTicker('INCST'),
+      category: 'STOCK',
+      assetClassId,
+      currency: 'BRL',
+      country: 'BR',
+      recommendedHorizon: 'LONG',
+    },
+  })
+  petr4Id = stockAsset.id
+
+  const fiiAsset = await prisma.asset.create({
+    data: {
+      name: uniqueName('FII Income'),
+      ticker: uniqueTicker('INCFI'),
+      category: 'FII',
+      assetClassId,
+      currency: 'BRL',
+      country: 'BR',
+      recommendedHorizon: 'LONG',
+    },
+  })
+  xpml11Id = fiiAsset.id
 
   const account = await prisma.account.create({
     data: {
@@ -52,15 +90,6 @@ beforeAll(async () => {
   })
   accountId = account.id
 
-  // Usa ativos já populados pelo seed
-  const petr4 = await prisma.asset.findUnique({ where: { ticker: 'PETR4' } })
-  if (!petr4) throw new Error('PETR4 não encontrado — rode pnpm db:seed antes dos testes')
-  petr4Id = petr4.id
-
-  const xpml11 = await prisma.asset.findUnique({ where: { ticker: 'XPML11' } })
-  if (!xpml11) throw new Error('XPML11 não encontrado — rode pnpm db:seed antes dos testes')
-  xpml11Id = xpml11.id
-
   // Prepara saldo inicial para suportar operações de compra
   await createTransaction({
     referenceId: `deposito-income-${accountId}`,
@@ -72,15 +101,17 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  await prisma.incomeEvent.deleteMany({ where: { accountId } })
-  await prisma.rentalReceipt.deleteMany({ where: { accountId } })
-  await prisma.ledgerEntry.deleteMany({ where: { accountId } })
-  await prisma.transaction.deleteMany({ where: { accountId } })
-  await prisma.account.delete({ where: { id: accountId } })
-  await prisma.client.delete({ where: { id: clientId } })
-  await prisma.institution.delete({ where: { id: institutionId } })
-  await prisma.portfolio.delete({ where: { id: portfolioId } })
-  await prisma.user.delete({ where: { id: userId } })
+  await safeDeleteMany(prisma.incomeEvent, { accountId })
+  await safeDeleteMany(prisma.rentalReceipt, { accountId })
+  await safeDeleteMany(prisma.ledgerEntry, { accountId })
+  await safeDeleteMany(prisma.transaction, { accountId })
+  await safeDeleteMany(prisma.account, { id: accountId })
+  await safeDeleteMany(prisma.asset, { id: { in: [petr4Id, xpml11Id] } })
+  await safeDeleteMany(prisma.assetClass, { id: assetClassId })
+  await safeDeleteMany(prisma.client, { id: clientId })
+  await safeDeleteMany(prisma.institution, { id: institutionId })
+  await safeDeleteMany(prisma.portfolio, { id: portfolioId })
+  await safeDeleteMany(prisma.user, { id: userId })
   await prisma.$disconnect()
 })
 
@@ -124,7 +155,7 @@ describe('createIncomeEvent() — rendimento FII (FII_RENT)', () => {
     expect(event.type).toBe('FII_RENT')
     expect(event.netAmount).toEqual(new Decimal('220.5'))
     expect(event.taxAmount).toEqual(new Decimal('0'))
-    expect(event.asset?.ticker).toBe('XPML11')
+    expect(event.asset?.id).toBe(xpml11Id)
   })
 })
 
@@ -203,7 +234,7 @@ describe('calculatePositionByAsset() — apenas compras', () => {
     const position = await calculatePositionByAsset(accountId, petr4Id)
 
     expect(position).not.toBeNull()
-    expect(position!.ticker).toBe('PETR4')
+    expect(position!.assetId).toBe(petr4Id)
     expect(position!.quantity).toEqual(new Decimal('150'))
 
     // Custo médio = (100×35 + 50×40) / 150 = 5500 / 150 ≈ 36.6666...
@@ -245,7 +276,7 @@ describe('getPositionsByAccount()', () => {
 
     // Deve incluir PETR4 (qty 100) mas não ativos sem transações
     expect(positions.length).toBeGreaterThanOrEqual(1)
-    const petr4Pos = positions.find((p) => p.ticker === 'PETR4')
+    const petr4Pos = positions.find((p) => p.assetId === petr4Id)
     expect(petr4Pos).toBeDefined()
     expect(petr4Pos!.quantity.greaterThan(0)).toBe(true)
   })

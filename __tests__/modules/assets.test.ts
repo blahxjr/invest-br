@@ -82,9 +82,9 @@ describe('getAssetByTicker()', () => {
 })
 
 describe('getAllAssetClasses()', () => {
-  it('retorna pelo menos as classes do seed (>= 6)', async () => {
+  it('retorna classes incluindo a classe criada no teste', async () => {
     const classes = await getAllAssetClasses()
-    expect(classes.length).toBeGreaterThanOrEqual(6)
+    expect(classes.some((c) => c.id === assetClassId)).toBe(true)
   })
 })
 

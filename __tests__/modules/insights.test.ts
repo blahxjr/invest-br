@@ -9,11 +9,12 @@
  * - Ativo SHORT em carteira LONG → detecta HORIZONTE_DESALINHADO
  */
 
-import { describe, it, expect, beforeEach } from 'vitest'
-import { Decimal } from '@prisma/client/runtime/library'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { Decimal } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { getInsightsForClient } from '@/modules/insights/service'
 import { InsightType } from '@/modules/insights/types'
+import { safeDeleteMany, uniqueName, uniqueSuffix, uniqueTicker } from '../helpers/fixtures'
 
 async function seedInsightCatalogDefaults() {
   const defaultTypes = [
@@ -42,8 +43,15 @@ async function seedInsightCatalogDefaults() {
     })
   }
 
-  const profile = await prisma.insightConfigProfile.create({
-    data: {
+  const profile = await prisma.insightConfigProfile.upsert({
+    where: { id: 'global-test-profile' },
+    update: {
+      name: 'Global Test Profile',
+      scope: 'GLOBAL',
+      isSystemDefault: true,
+    },
+    create: {
+      id: 'global-test-profile',
       name: 'Global Test Profile',
       scope: 'GLOBAL',
       isSystemDefault: true,
@@ -52,8 +60,18 @@ async function seedInsightCatalogDefaults() {
 
   const types = await prisma.insightType.findMany()
   for (const type of types) {
-    await prisma.insightConfigRule.create({
-      data: {
+    await prisma.insightConfigRule.upsert({
+      where: {
+        profileId_insightTypeId: {
+          profileId: profile.id,
+          insightTypeId: type.id,
+        },
+      },
+      update: {
+        enabled: true,
+        thresholdOverride: type.defaultThreshold,
+      },
+      create: {
         profileId: profile.id,
         insightTypeId: type.id,
         enabled: true,
@@ -70,41 +88,27 @@ describe('Módulo Insights', () => {
   let assetClassId: string
   let assetId1: string
   let assetId2: string
+  let userId: string
+  let institutionId: string
+  const suiteId = uniqueSuffix()
 
   beforeEach(async () => {
-    // Limpar dados de teste anteriores
-    await prisma.insightConfigRule.deleteMany()
-    await prisma.insightConfigProfile.deleteMany()
-    await prisma.insightType.deleteMany()
-    await prisma.transaction.deleteMany()
-    await prisma.account.deleteMany()
-    await prisma.asset.deleteMany()
-    await prisma.assetClass.deleteMany()
-    await prisma.portfolio.deleteMany()
-    await prisma.client.deleteMany()
-    await prisma.user.deleteMany({
-      where: {
-        email: {
-          contains: 'test-insights-',
-        },
-      },
-    })
-
     await seedInsightCatalogDefaults()
 
     // Criar usuário de teste
     const user = await prisma.user.create({
       data: {
-        email: `test-insights-${Date.now()}@example.com`,
+        email: `test-insights-${suiteId}-${uniqueSuffix()}@example.com`,
         emailVerified: new Date(),
       },
     })
+    userId = user.id
 
     // Criar cliente
     const client = await prisma.client.create({
       data: {
-        userId: user.id,
-        name: 'Test Client',
+        userId,
+        name: uniqueName('Test Client'),
       },
     })
     clientId = client.id
@@ -112,8 +116,8 @@ describe('Módulo Insights', () => {
     // Criar carteira
     const portfolio = await prisma.portfolio.create({
       data: {
-        userId: user.id,
-        name: 'Test Portfolio',
+        userId,
+        name: uniqueName('Test Portfolio'),
       },
     })
     portfolioId = portfolio.id
@@ -121,18 +125,19 @@ describe('Módulo Insights', () => {
     // Criar instituição
     const institution = await prisma.institution.create({
       data: {
-        name: 'Test Bank',
+        name: uniqueName('Test Bank'),
         type: 'BANK',
       },
     })
+    institutionId = institution.id
 
     // Criar conta
     const account = await prisma.account.create({
       data: {
         clientId,
-        institutionId: institution.id,
+        institutionId,
         portfolioId,
-        name: 'Test Account',
+        name: uniqueName('Test Account'),
         type: 'BROKERAGE',
       },
     })
@@ -141,7 +146,7 @@ describe('Módulo Insights', () => {
     // Criar classe de ativo
     const assetClass = await prisma.assetClass.create({
       data: {
-        name: 'Ações Brasileiras',
+        name: uniqueName('Ações Brasileiras'),
         
         recommendedHorizonBase: 'LONG',
       },
@@ -151,8 +156,8 @@ describe('Módulo Insights', () => {
     // Criar ativos
     const asset1 = await prisma.asset.create({
       data: {
-        name: 'WEG S/A',
-        ticker: 'WEGE3',
+        name: uniqueName('WEG S/A'),
+        ticker: uniqueTicker('WEGE'),
         assetClassId,
         category: 'STOCK',
         currency: 'BRL',
@@ -164,8 +169,8 @@ describe('Módulo Insights', () => {
 
     const asset2 = await prisma.asset.create({
       data: {
-        name: 'Vale S/A',
-        ticker: 'VALE3',
+        name: uniqueName('Vale S/A'),
+        ticker: uniqueTicker('VALE'),
         assetClassId,
         category: 'STOCK',
         currency: 'BRL',
@@ -174,6 +179,17 @@ describe('Módulo Insights', () => {
       },
     })
     assetId2 = asset2.id
+  })
+
+  afterEach(async () => {
+    await safeDeleteMany(prisma.transaction, { accountId })
+    await safeDeleteMany(prisma.account, { clientId })
+    await safeDeleteMany(prisma.asset, { assetClassId })
+    await safeDeleteMany(prisma.assetClass, { id: assetClassId })
+    await safeDeleteMany(prisma.portfolio, { userId })
+    await safeDeleteMany(prisma.client, { id: clientId })
+    await safeDeleteMany(prisma.institution, { id: institutionId })
+    await safeDeleteMany(prisma.user, { id: userId })
   })
 
   it('Cliente sem transações deve retornar insights vazio', async () => {
@@ -234,8 +250,8 @@ describe('Módulo Insights', () => {
 
     const asset3 = await prisma.asset.create({
       data: {
-        name: 'Tesouro Direto',
-        ticker: 'TDIR',
+        name: uniqueName('Tesouro Direto'),
+        ticker: uniqueTicker('TDIR'),
         assetClassId: assetClass2.id,
         currency: 'BRL',
         country: 'BR',
@@ -323,8 +339,8 @@ describe('Módulo Insights', () => {
     // Criar ativo com horizonte SHORT
     const assetShort = await prisma.asset.create({
       data: {
-        name: 'Tesouro Prefixado 2024',
-        ticker: 'TPRF24',
+        name: uniqueName('Tesouro Prefixado 2024'),
+        ticker: uniqueTicker('TPRF'),
         assetClassId,
         category: 'STOCK',
         currency: 'BRL',
@@ -455,8 +471,8 @@ describe('Módulo Insights', () => {
       },
     })
 
-    const globalProfile = await prisma.insightConfigProfile.findFirstOrThrow({
-      where: { scope: 'GLOBAL', isSystemDefault: true },
+    const globalProfile = await prisma.insightConfigProfile.findUniqueOrThrow({
+      where: { id: 'global-test-profile' },
     })
     const typeAtivo = await prisma.insightType.findUniqueOrThrow({
       where: { code: 'CONCENTRACAO_ATIVO' },

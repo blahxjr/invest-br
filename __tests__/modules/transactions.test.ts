@@ -7,6 +7,7 @@ import {
   getAccountBalance,
   getTransactionByReference,
 } from '../../src/modules/transactions/service'
+import { safeDeleteMany, uniqueName, uniqueSuffix, uniqueTicker } from '../helpers/fixtures'
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 let userId: string
@@ -15,28 +16,52 @@ let accountId: string
 let petr4Id: string
 let clientId: string
 let institutionId: string
+let assetClassId: string
+const suiteId = uniqueSuffix()
 
 beforeAll(async () => {
   // Cria estrutura mínima de suporte
   const user = await prisma.user.create({
-    data: { email: `tx-test-${Date.now()}@invest.br`, name: 'Ledger Test User' },
+    data: { email: `tx-test-${suiteId}@invest.br`, name: uniqueName('Ledger Test User') },
   })
   userId = user.id
 
   const portfolio = await prisma.portfolio.create({
-    data: { name: 'Carteira Teste Ledger', userId },
+    data: { name: uniqueName('Carteira Teste Ledger'), userId },
   })
   portfolioId = portfolio.id
 
   const client = await prisma.client.create({
-    data: { name: 'Cliente Ledger Teste', userId },
+    data: { name: uniqueName('Cliente Ledger Teste'), userId },
   })
   clientId = client.id
 
   const institution = await prisma.institution.create({
-    data: { name: `Instituição Ledger ${Date.now()}` },
+    data: { name: uniqueName('Instituição Ledger') },
   })
   institutionId = institution.id
+
+  const assetClass = await prisma.assetClass.create({
+    data: {
+      name: uniqueName('Classe Ledger'),
+      code: `TX_${suiteId.slice(0, 6).toUpperCase()}`,
+      description: 'Classe para testes do módulo transactions',
+    },
+  })
+  assetClassId = assetClass.id
+
+  const stockAsset = await prisma.asset.create({
+    data: {
+      name: uniqueName('Ativo Ledger'),
+      ticker: uniqueTicker('TXPET'),
+      category: 'STOCK',
+      assetClassId,
+      currency: 'BRL',
+      country: 'BR',
+      recommendedHorizon: 'LONG',
+    },
+  })
+  petr4Id = stockAsset.id
 
   const account = await prisma.account.create({
     data: {
@@ -49,21 +74,19 @@ beforeAll(async () => {
   })
   accountId = account.id
 
-  // Usa PETR4 já do seed — localiza pelo ticker
-  const petr4 = await prisma.asset.findUnique({ where: { ticker: 'PETR4' } })
-  if (!petr4) throw new Error('PETR4 não encontrado — rode pnpm db:seed antes dos testes')
-  petr4Id = petr4.id
 })
 
 afterAll(async () => {
   // Limpa em ordem inversa de dependência (FK)
-  await prisma.ledgerEntry.deleteMany({ where: { accountId } })
-  await prisma.transaction.deleteMany({ where: { accountId } })
-  await prisma.account.delete({ where: { id: accountId } })
-  await prisma.client.delete({ where: { id: clientId } })
-  await prisma.institution.delete({ where: { id: institutionId } })
-  await prisma.portfolio.delete({ where: { id: portfolioId } })
-  await prisma.user.delete({ where: { id: userId } })
+  await safeDeleteMany(prisma.ledgerEntry, { accountId })
+  await safeDeleteMany(prisma.transaction, { accountId })
+  await safeDeleteMany(prisma.account, { id: accountId })
+  await safeDeleteMany(prisma.asset, { id: petr4Id })
+  await safeDeleteMany(prisma.assetClass, { id: assetClassId })
+  await safeDeleteMany(prisma.client, { id: clientId })
+  await safeDeleteMany(prisma.institution, { id: institutionId })
+  await safeDeleteMany(prisma.portfolio, { id: portfolioId })
+  await safeDeleteMany(prisma.user, { id: userId })
   await prisma.$disconnect()
 })
 

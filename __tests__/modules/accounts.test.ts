@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest'
 import { prisma } from '../../src/lib/prisma'
 import {
   createAccount,
@@ -6,6 +6,7 @@ import {
   getAccountsByPortfolio,
   updateAccount,
 } from '../../src/modules/accounts/service'
+import { safeDeleteMany, uniqueName, uniqueSuffix } from '../helpers/fixtures'
 
 let userId: string
 let otherUserId: string
@@ -14,56 +15,61 @@ let otherPortfolioId: string
 let clientId: string
 let institutionId: string
 let secondInstitutionId: string
+const suiteId = uniqueSuffix()
 
 beforeAll(async () => {
   const user = await prisma.user.create({
-    data: { email: `test-accounts-${Date.now()}@invest.br`, name: 'Test User' },
+    data: { email: `test-accounts-${suiteId}@invest.br`, name: uniqueName('Test User') },
   })
   userId = user.id
 
   const otherUser = await prisma.user.create({
-    data: { email: `test-accounts-other-${Date.now()}@invest.br`, name: 'Other User' },
+    data: {
+      email: `test-accounts-other-${suiteId}@invest.br`,
+      name: uniqueName('Other User'),
+    },
   })
   otherUserId = otherUser.id
 
   const portfolio = await prisma.portfolio.create({
-    data: { name: 'Portfólio Teste', userId },
+    data: { name: uniqueName('Portfólio Teste'), userId },
   })
   portfolioId = portfolio.id
 
   const otherPortfolio = await prisma.portfolio.create({
-    data: { name: 'Portfólio Outro Usuário', userId: otherUserId },
+    data: { name: uniqueName('Portfólio Outro Usuário'), userId: otherUserId },
   })
   otherPortfolioId = otherPortfolio.id
 
   const client = await prisma.client.create({
-    data: { name: 'Cliente Teste', userId },
+    data: { name: uniqueName('Cliente Teste'), userId },
   })
   clientId = client.id
 
   const institution = await prisma.institution.create({
-    data: { name: `Instituição Teste ${Date.now()}` },
+    data: { name: uniqueName('Instituição Teste') },
   })
   institutionId = institution.id
 
   const secondInstitution = await prisma.institution.create({
-    data: { name: `Instituição Atualizada ${Date.now()}` },
+    data: { name: uniqueName('Instituição Atualizada') },
   })
   secondInstitutionId = secondInstitution.id
 })
 
+afterEach(async () => {
+  await safeDeleteMany(prisma.account, { clientId })
+})
+
 afterAll(async () => {
-  await prisma.account.deleteMany({ where: { clientId } })
-  await prisma.client.delete({ where: { id: clientId } })
-  await prisma.institution.deleteMany({
-    where: { id: { in: [institutionId, secondInstitutionId] } },
-  })
-  await prisma.portfolio.delete({ where: { id: otherPortfolioId } })
-  await prisma.portfolio.delete({ where: { id: portfolioId } })
-  await prisma.user.delete({ where: { id: otherUserId } })
-  await prisma.user.delete({ where: { id: userId } })
+  await safeDeleteMany(prisma.account, { clientId })
+  await safeDeleteMany(prisma.client, { id: clientId })
+  await safeDeleteMany(prisma.institution, { id: { in: [institutionId, secondInstitutionId] } })
+  await safeDeleteMany(prisma.portfolio, { id: { in: [portfolioId, otherPortfolioId] } })
+  await safeDeleteMany(prisma.user, { id: { in: [userId, otherUserId] } })
   await prisma.$disconnect()
 })
+
 
 describe('createAccount()', () => {
   it('cria uma conta do tipo BROKERAGE vinculada ao portfólio', async () => {

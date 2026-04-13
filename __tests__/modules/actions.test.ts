@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
 
 // @vitest-environment node
 // Testa comportamento das Server Actions de conta e transação
@@ -16,6 +16,8 @@ import { auth } from '@/lib/auth'
 import { prisma } from '../../src/lib/prisma'
 import { createAccountAction } from '../../src/app/(app)/accounts/new/actions'
 import { getAccountsForUser, createTransactionAction } from '../../src/app/(app)/transactions/new/actions'
+import { createAccount } from '../../src/modules/accounts/service'
+import { safeDeleteMany, uniqueName, uniqueSuffix } from '../helpers/fixtures'
 
 const mockAuth = auth as ReturnType<typeof vi.fn>
 
@@ -24,52 +26,67 @@ let portfolioId: string
 let otherUserId: string
 let otherPortfolioId: string
 let existingInstitutionId: string
+let clientId: string
+let chainedInstitutionName: string
+const suiteId = uniqueSuffix()
 
 beforeAll(async () => {
   const user = await prisma.user.create({
-    data: { email: `test-actions-${Date.now()}@invest.br`, name: 'Test Actions' },
+    data: { email: `test-actions-${suiteId}@invest.br`, name: uniqueName('Test Actions') },
   })
   userId = user.id
 
   const portfolio = await prisma.portfolio.create({
-    data: { name: 'Carteira Test Actions', userId },
+    data: { name: uniqueName('Carteira Test Actions'), userId },
   })
   portfolioId = portfolio.id
 
+  const client = await prisma.client.create({
+    data: { userId, name: uniqueName('Cliente Actions') },
+  })
+  clientId = client.id
+
   const otherUser = await prisma.user.create({
-    data: { email: `test-actions-other-${Date.now()}@invest.br`, name: 'Other Actions' },
+    data: {
+      email: `test-actions-other-${suiteId}@invest.br`,
+      name: uniqueName('Other Actions'),
+    },
   })
   otherUserId = otherUser.id
 
   const otherPortfolio = await prisma.portfolio.create({
-    data: { name: 'Carteira Outro Usuário Actions', userId: otherUserId },
+    data: { name: uniqueName('Carteira Outro Usuário Actions'), userId: otherUserId },
   })
   otherPortfolioId = otherPortfolio.id
 
   const institution = await prisma.institution.create({
-    data: { name: `Instituição Ações ${Date.now()}` },
+    data: { name: uniqueName('Instituição Ações') },
   })
   existingInstitutionId = institution.id
+
+  chainedInstitutionName = uniqueName('Instituição Encadeada')
+})
+
+afterEach(async () => {
+  await safeDeleteMany(prisma.transaction, {
+    account: { portfolioId },
+  })
+  await safeDeleteMany(prisma.account, { portfolioId })
+  await safeDeleteMany(prisma.institution, { name: chainedInstitutionName })
 })
 
 afterAll(async () => {
-  await prisma.transaction.deleteMany({
-    where: { account: { portfolioId } },
+  await safeDeleteMany(prisma.transaction, { account: { portfolioId } })
+  await safeDeleteMany(prisma.account, { portfolioId })
+  await safeDeleteMany(prisma.client, { id: clientId })
+  await safeDeleteMany(prisma.institution, {
+    OR: [
+      { id: existingInstitutionId },
+      { name: chainedInstitutionName },
+    ],
   })
-  await prisma.account.deleteMany({ where: { portfolioId } })
-  await prisma.client.deleteMany({ where: { userId } })
-  await prisma.institution.deleteMany({
-    where: {
-      OR: [
-        { id: existingInstitutionId },
-        { name: `Instituição Encadeada ${userId}` },
-      ],
-    },
-  })
-  await prisma.portfolio.delete({ where: { id: otherPortfolioId } })
-  await prisma.portfolio.delete({ where: { id: portfolioId } })
-  await prisma.user.delete({ where: { id: otherUserId } })
-  await prisma.user.delete({ where: { id: userId } })
+  await safeDeleteMany(prisma.portfolio, { id: { in: [portfolioId, otherPortfolioId] } })
+  await safeDeleteMany(prisma.user, { id: { in: [userId, otherUserId] } })
   await prisma.$disconnect()
 })
 
@@ -109,7 +126,7 @@ describe('createAccountAction()', () => {
     const formData = new FormData()
     formData.set('name', 'Conta Actions Nova Instituição')
     formData.set('type', 'BANK')
-    formData.set('institutionName', `Instituição Encadeada ${userId}`)
+    formData.set('institutionName', chainedInstitutionName)
 
     await expect(createAccountAction(formData)).rejects.toThrow('REDIRECT:/accounts')
 
@@ -119,7 +136,7 @@ describe('createAccountAction()', () => {
     })
 
     expect(created).not.toBeNull()
-    expect(created?.institution.name).toBe(`Instituição Encadeada ${userId}`)
+    expect(created?.institution.name).toBe(chainedInstitutionName)
   })
 
   it('falha quando institutionId informado não existe', async () => {
@@ -152,9 +169,17 @@ describe('getAccountsForUser()', () => {
   it('retorna contas do usuário autenticado', async () => {
     mockAuth.mockResolvedValue({ user: { id: userId } })
 
+    await createAccount({
+      name: 'Conta Actions Listagem',
+      type: 'BROKERAGE',
+      clientId,
+      institutionId: existingInstitutionId,
+      portfolioId,
+    })
+
     const accounts = await getAccountsForUser()
     expect(Array.isArray(accounts)).toBe(true)
-    expect(accounts.some((a: { name: string }) => a.name === 'Conta Actions Test')).toBe(true)
+    expect(accounts.some((a: { name: string }) => a.name === 'Conta Actions Listagem')).toBe(true)
   })
 
   it('retorna array vazio quando usuário não autenticado', async () => {

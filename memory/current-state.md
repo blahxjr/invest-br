@@ -1,6 +1,6 @@
 # Estado atual do projeto
 
-**Última atualização:** 2026-04-09
+**Última atualização:** 2026-04-12
 
 ## Stack confirmada
 - Prisma ORM 7.7.0 + PostgreSQL (investbr)
@@ -54,7 +54,13 @@ Status: iniciado e implementado (backend, frontend e testes).
 - __tests__/modules/institutions.test.ts cobre create/list/update com validações de nome, tipo e duplicidade.
 - __tests__/modules/accounts.test.ts cobre create/list/update com regras de vínculo, escopo e cenários de erro.
 - __tests__/modules/actions.test.ts cobre Server Actions de cadastro/listagem.
-- Última execução observada no contexto: testes de institutions/accounts/actions passando.
+- Suíte estabilizada em 2026-04-12 com fixtures isoladas e cleanup idempotente.
+- Helper de testes compartilhado criado em __tests__/helpers/fixtures.ts (uniqueSuffix, uniqueTicker, safeDeleteMany).
+- Dependência de seed removida dos testes de módulos de transações/rendimentos e dos checks de classes em assets.
+- Validação executada 3x sem flakiness:
+	- npx vitest run → 96 passed, 0 failed
+	- npx vitest run --maxWorkers=1 → 96 passed, 0 failed
+	- npx vitest run → 96 passed, 0 failed
 
 ## Decisões ativas relacionadas
 - DEC-001: Prisma 7 com adapter pg obrigatório.
