@@ -57,6 +57,10 @@ Status: iniciado e implementado (backend, frontend e testes).
 - Suíte estabilizada em 2026-04-12 com fixtures isoladas e cleanup idempotente.
 - Helper de testes compartilhado criado em __tests__/helpers/fixtures.ts (uniqueSuffix, uniqueTicker, safeDeleteMany).
 - Dependência de seed removida dos testes de módulos de transações/rendimentos e dos checks de classes em assets.
+- Testes de componentes estabilizados em 2026-04-12.
+- Componentes com cobertura: IncomeCard, PositionCard, AccountCard, InsightRulesForm, LoginPage, Sidebar, InsightsList/insights.
+- Sidebar.test.tsx atualizado para refletir os 8 itens de navegação atuais.
+- Suíte completa: 96 passed, 0 failed (incluindo componentes).
 - Validação executada 3x sem flakiness:
 	- npx vitest run → 96 passed, 0 failed
 	- npx vitest run --maxWorkers=1 → 96 passed, 0 failed
