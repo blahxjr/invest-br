@@ -13,15 +13,10 @@
 - xlsx (SheetJS) ^0.18.5 — leitura de planilhas B3 em Server Actions
 
 ## Módulo Cadastro: Instituições e Contas
-
 Status: implementado e estabilizado.
-
-### Contratos implementados
 - src/modules/institutions/service.ts — createInstitution, listInstitutions, updateInstitution
 - src/modules/accounts/service.ts — createAccount, getAccountsByPortfolio, getAccountsByClient, updateAccount
-
-### Regras de vínculo vigentes
-- Account exige clientId e institutionId válidos; portfolioId opcional.
+- Regras: Account exige clientId e institutionId; portfolioId opcional
 
 ## Entidades e vínculos relevantes
 - User 1-N Client, User 1-N Portfolio
@@ -37,15 +32,14 @@ Status: implementado e estabilizado.
 ```
 STOCK | FII | ETF | FIXED_INCOME | FUND | CRYPTO | METAL | REAL_ESTATE | CASH | BDR
 ```
-BDR adicionado no Prompt 9. Fallback BDR → STOCK removido.
 
 ## Testes
-- Suíte completa: **115 passed, 0 failed** (validado em 2026-04-13)
+- Suíte completa: **119 passed, 0 failed** (validado em 2026-04-13)
 - Prompt 8 (Import B3): 10 testes
-- Prompt 9 (Posições): 5 testes (algoritmo custo médio)
-- Prompt 10 (Dashboard v2): 7 testes (4 calcAllocation + 3 AllocationChart)
-- Próxima meta após Prompt 11: 121 passed
-- Helper: __tests__/helpers/fixtures.ts (uniqueSuffix, uniqueTicker, safeDeleteMany)
+- Prompt 9 (Posições): 5 testes
+- Prompt 10 (Dashboard v2): 7 testes
+- Prompt 11 (Cotações): 4 quotes.test.ts + 2 PositionCard.test.tsx = **6 novos** (119 - 6 = 113 base real)
+- Helper: __tests__/helpers/fixtures.ts
 
 ## Decisões ativas
 - DEC-001: Prisma 7 com adapter pg obrigatório
@@ -56,6 +50,7 @@ BDR adicionado no Prompt 9. Fallback BDR → STOCK removido.
 - DEC-014: Account com Client e Institution obrigatórios; Portfolio opcional
 - DEC-015: Insights V1 calculados on-the-fly, sem tabela Insight persistida
 - DEC-016: Decimal → string/number antes de cruzar boundary Server→Client
+- DEC-017: Tipagem de resposta de API externa com tipos dedicados (sem `any` explícito)
 - ADR-004: BDR fallback resolvido no Prompt 9
 
 ## Módulo Proventos (Income)
@@ -65,62 +60,67 @@ Fora de escopo: RentalReceipt, edição/exclusão, paginação.
 ## Módulo Import B3 (Prompt 8)
 Status: implementado — Negociação, Movimentação e Posição.
 - Parsers puros em src/modules/b3/parser/
-- Idempotência via referenceId; ticker fracionário normalizado (sufixo F removido)
+- Idempotência via referenceId; ticker fracionário normalizado
 - Tipos de movimentação ignorados: Cessão de Direitos, Subscrição, Atualização
 
 ## Módulo Posições (Prompt 9)
 Status: implementado — /positions com custo médio ponderado.
-- src/modules/positions/service.ts — getPositions(userId) + calcPositions() + summarizePositions()
-- src/modules/positions/types.ts — Position, PositionSummary, AllocationItem
+- getPositions(userId) — 1 query, Map<assetId> em memória
+- Position, PositionSummary, AllocationItem em types.ts
 - Filtros client-side por AssetCategory e AssetClass
-- 1 query única, Map<assetId> em memória, ativos zerados removidos
 
 ## Módulo Dashboard v2 (Prompt 10)
-Status: implementado — gráfico de alocação + refactor N+1.
-- getDashboardData() usa getPositions() — eliminou N+1
-- calcAllocation() exportada como função pura
-- AllocationChart.tsx — donut SVG nativo + legenda + Top 3 por categoria com rótulo "Outros"
-- dashboard-client.tsx — Client Component wrapper
-- KPIs: Patrimônio (custo total) | Ativos distintos | Proventos do mês
-- Top 5 posições via positions.slice(0, 5)
+Status: implementado.
+- getDashboardData() usa getPositions() — sem N+1
+- calcAllocation() pura e exportada
+- AllocationChart.tsx — donut SVG nativo + legenda + Top 3 com "Outros"
+- KPIs: Patrimônio (custo) | Ativos | Proventos/mês
 
 ## Módulo Cotações (Prompt 11)
-Status: **em implementação**
+Status: implementado — P&L e valor de mercado em tempo real.
 
-### Escopo previsto
-- src/lib/quotes.ts — getQuotes(tickers[]) com cache 5min (next: { revalidate: 300 })
-- src/modules/positions/types.ts — PositionWithQuote + enrichWithQuotes() pura
-- /positions/page.tsx — enriquece posições com cotações antes de passar ao client
-- position-card.tsx — exibe P&L e variação do dia condicionalmente
-- dashboard/data.ts — enriquece top5 + novo KPI totalCurrentValue (Valor de Mercado)
+### Escopo entregue
+- src/lib/quotes.ts — getQuotes(tickers[]) com batching (50/req) + cache 5min (next: { revalidate: 300 }) + falha silenciosa
+- src/modules/positions/types.ts — PositionWithQuote, SerializedPositionWithQuote, enrichWithQuotes() pura
+- /positions/page.tsx — enriquece posições com cotações antes do client
+- position-card.tsx (módulo positions) — P&L e var. dia condicionais
+- src/components/PositionCard.tsx — props de P&L/quote adicionadas
+- dashboard/data.ts — top5 enriquecido + totalCurrentValue
+- dashboard/page.tsx — novo KPI "Valor de Mercado"
+- run.md — BRAPI_TOKEN documentado como opcional
 
 ### API: Brapi.dev
 - Gratuita, cobre B3 completa (STOCK, FII, ETF, BDR)
-- Até 50 tickers por request — batching automático
-- Token via BRAPI_TOKEN (opcional, aumenta rate limit)
-- Falha silenciosa: posição exibe sem preço, nunca quebra a página
+- Até 50 tickers/request — batching automático
+- BRAPI_TOKEN via .env.local (opcional)
+- Falha silenciosa: 429/5xx retorna [], nunca quebra a página
 
-### Variável de ambiente nova
+### Tipos novos
+```typescript
+PositionWithQuote = Position & {
+  currentPrice:    number | null
+  currentValue:    Decimal | null
+  gainLoss:        Decimal | null
+  gainLossPercent: Decimal | null
+  quoteChangePct:  number | null
+  quotedAt:        Date | null
+}
+SerializedPositionWithQuote   // versão string/null para cruzar boundary Server→Client
 ```
-BRAPI_TOKEN=seu_token   # opcional — https://brapi.dev
-```
-
-### Testes previstos (6 novos)
-- 4 testes de enrichWithQuotes (função pura, sem fetch)
-- 2 testes de PositionCard (P&L positivo/negativo, omissão sem preço)
 
 ## Build e Qualidade
 
 **Última validação:** 2026-04-13  
 **Build TypeScript:** ✅ Zero erros  
-**Testes:** ✅ 115 passed, 0 failed  
+**Testes:** ✅ 119 passed, 0 failed  
 **Rotas ativas:** /dashboard | /accounts | /transactions | /income | /positions | /import  
-**N+1:** ✅ Eliminados em dashboard e posições  
-**Decimal→Client:** ✅ DEC-016 aplicada  
+**N+1:** ✅ Eliminados  
+**Decimal→Client:** ✅ DEC-016 + SerializedPositionWithQuote  
+**Sem `any` explícito:** ✅ DEC-017 — tipos dedicados para resposta Brapi  
 
 ## Pendências abertas
-- Variação % das posições com preço de mercado (desbloqueada após Prompt 11)
-- Snapshot histórico de patrimônio (evolução no tempo)
+- Snapshot histórico de patrimônio (evolução no tempo) — Prompt 12
+- P&L consolidado da carteira (gráfico de rentabilidade)
 - AssetIdentifier (múltiplos identificadores por ativo)
 - RentalReceipt (aluguéis de imóveis)
 - Edição/exclusão de transações e proventos

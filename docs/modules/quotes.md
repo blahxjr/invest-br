@@ -1,8 +1,10 @@
-# Módulo: Cotações (Prompt 11)
+# Módulo: Cotações
+
+**Última atualização:** 2026-04-13 (Prompt 11)
 
 ## Visão Geral
 
-Integração com a API [Brapi.dev](https://brapi.dev) para buscar preços atuais dos ativos da carteira. Enriquece `Position` com `currentPrice`, `currentValue`, `gainLoss`, `gainLossPercent` e `quoteChangePct`. Nunca quebra a aplicação em caso de falha da API externa.
+Integração com [Brapi.dev](https://brapi.dev) para buscar preços atuais dos ativos da carteira. Enriquece `Position` com `currentPrice`, `currentValue`, `gainLoss`, `gainLossPercent` e `quoteChangePct`. Nunca quebra a aplicação em caso de falha da API externa.
 
 ---
 
@@ -11,46 +13,44 @@ Integração com a API [Brapi.dev](https://brapi.dev) para buscar preços atuais
 ```
 src/
   lib/
-    quotes.ts                       ← NOVO: getQuotes() + fetchBatch()
+    quotes.ts                        ← getQuotes() + fetchBatch()
   modules/
     positions/
-      types.ts                      ← ADD: PositionWithQuote + enrichWithQuotes()
+      types.ts                       ← PositionWithQuote + SerializedPositionWithQuote + enrichWithQuotes()
   app/
     (app)/
       positions/
-        page.tsx                    ← ALT: chama getQuotes + enrichWithQuotes
-        position-card.tsx           ← ALT: exibe P&L condicionalmente
+        page.tsx                     ← chama getQuotes + enrichWithQuotes
+        positions-page-client.tsx    ← aceita SerializedPositionWithQuote[]
+        position-card.tsx            ← P&L e var. dia condicionais
       dashboard/
-        data.ts                     ← ALT: enriquece top5 + totalCurrentValue
-        page.tsx                    ← ALT: passa totalCurrentValue serializado
+        data.ts                      ← top5 enriquecido + totalCurrentValue
+        page.tsx                     ← KPI Valor de Mercado
+  components/
+    PositionCard.tsx                 ← props P&L/quote adicionadas
   __tests__/
     lib/
-      quotes.test.ts                ← NOVO: 4 testes de enrichWithQuotes
+      quotes.test.ts                 ← 4 testes enrichWithQuotes
     components/
-      PositionCard.test.tsx         ← ALT: +2 casos P&L
+      PositionCard.test.tsx          ← +2 casos P&L
 ```
 
 ---
 
 ## API: Brapi.dev
 
-```
-GET https://brapi.dev/api/quote/{tickers}
-    ?token=TOKEN          ← opcional (aumenta rate limit)
-    &fundamental=false
-    &dividends=false
-```
-
 | Detalhe | Valor |
 |---------|-------|
-| Máx tickers/request | 50 |
-| Cache server | 5 minutos (`next: { revalidate: 300 }`) |
+| Endpoint | `GET https://brapi.dev/api/quote/{tickers}` |
+| Máx tickers/req | 50 (batching automático) |
+| Cache servidor | 5 min (`next: { revalidate: 300 }`) |
 | Plano | Free (sem cadastro obrigatório) |
-| Cobertura | B3 completa: STOCK, FII, ETF, BDR |
+| Cobertura B3 | STOCK, FII, ETF, BDR |
+| Token | Opcional via `BRAPI_TOKEN` (aumenta rate limit) |
 
 ---
 
-## `getQuotes(tickers)` — `src/lib/quotes.ts`
+## `getQuotes` — `src/lib/quotes.ts`
 
 ```typescript
 export type QuoteResult = {
@@ -60,13 +60,16 @@ export type QuoteResult = {
   changePercent: number
 }
 
-export async function getQuotes(tickers: string[]): Promise<Map<string, QuoteResult>>
+export async function getQuotes(
+  tickers: string[]
+): Promise<Map<string, QuoteResult>>
 ```
 
-- Batcheia automaticamente em grupos de 50
-- Usa `fetch` nativo com `next: { revalidate: 300 }` (cache Next.js)
-- Retorna `Map<ticker, QuoteResult>` — tickers ausentes simples ausentes no map
-- **Falha silenciosa:** batch com erro retorna `[]`, nunca lanaça exceção
+- Agrupa tickers em lotes de 50
+- `fetch` com `next: { revalidate: 300 }` — cache nativo do Next.js
+- Resposta da Brapi parseada com **tipos dedicados** (DEC-017 — sem `any` explícito)
+- Batch com erro (4xx/5xx) retorna `[]` silenciosamente
+- Tickers ausentes simplesmente não aparecem no `Map` retornado
 
 ---
 
@@ -76,12 +79,24 @@ export async function getQuotes(tickers: string[]): Promise<Map<string, QuoteRes
 // src/modules/positions/types.ts
 
 export type PositionWithQuote = Position & {
-  currentPrice:     number | null
-  currentValue:     Decimal | null  // quantity × currentPrice
-  gainLoss:         Decimal | null  // currentValue - totalCost
-  gainLossPercent:  Decimal | null  // (gainLoss / totalCost) × 100
-  quoteChangePct:   number | null   // variação % do dia
-  quotedAt:         Date | null
+  currentPrice:    number | null
+  currentValue:    Decimal | null   // quantity × currentPrice
+  gainLoss:        Decimal | null   // currentValue - totalCost
+  gainLossPercent: Decimal | null   // (gainLoss / totalCost) × 100
+  quoteChangePct:  number | null    // variação % do dia
+  quotedAt:        Date | null
+}
+
+export type SerializedPositionWithQuote = Omit<
+  PositionWithQuote,
+  'quantity' | 'avgCost' | 'totalCost' | 'currentValue' | 'gainLoss' | 'gainLossPercent'
+> & {
+  quantity:        string
+  avgCost:         string
+  totalCost:       string
+  currentValue:    string | null
+  gainLoss:        string | null
+  gainLossPercent: string | null
 }
 
 export function enrichWithQuotes(
@@ -90,43 +105,36 @@ export function enrichWithQuotes(
 ): PositionWithQuote[]
 ```
 
-Casos especiais:
-- Ticker não encontrado no mapa → todos os campos `null`
+**Casos especiais:**
+- Ticker ausente no mapa → todos os campos `null`
 - `totalCost = 0` → `gainLossPercent = 0` (evita divisão por zero)
-- `gainLoss` negativo → `isNegative()` = true
+- `gainLoss` negativo → `isNegative()` = `true`
 
 ---
 
-## Exibição no `PositionCard`
-
-Condicional: só exibe se `currentPrice !== null`.
+## PositionCard: Exibição Condicional
 
 ```
-┌──────────────────────────────┐
-│ PETR4  [STOCK]             │
-│ Petróleo Brasileiro SA     │
-├──────────────────────────────┤
-│ Qtd:         10            │
-│ Custo médio: R$ 30,00      │
-│ Custo total: R$ 300,00     │
-│ Valor atual: R$ 384,50 ↑   │  ← só se currentPrice não-null
-│ P&L: +R$ 84,50 (+28,2%)   │  ← verde se positivo
-│ Var. dia: +1,23%           │  ← vermelho se negativo
-└──────────────────────────────┘
+Sempre visível:
+  ticker | nome | badge categoria
+  cotas | custo médio | custo total
+
+Só se currentPrice !== null:
+  Valor atual: R$ X,XX
+  P&L: +/-R$ X,XX (+/-X,X%)   ← verde/vermelho
+  Var. dia: +/-X,XX%           ← verde/vermelho
 ```
 
 ---
 
-## Dashboard: Novo KPI
-
-`totalCurrentValue` = soma de `currentValue` das posições com cotação disponível.
+## Dashboard: KPI Valor de Mercado
 
 ```
 Patrimônio (custo)  |  Valor de Mercado  |  Ativos  |  Proventos/mês
-R$ 47.832,00         |  R$ 52.140,00      |  68      |  R$ 1.230,00
 ```
 
-A diferença entre os dois KPIs é o P&L total da carteira visualmente implícito.
+`totalCurrentValue` = soma de `currentValue` das posições com cotação disponível.  
+A diferença entre os dois KPIs é o P&L implícito da carteira.
 
 ---
 
@@ -137,18 +145,18 @@ A diferença entre os dois KPIs é o P&L total da carteira visualmente implícit
 BRAPI_TOKEN=seu_token_aqui   # opcional — https://brapi.dev
 ```
 
-Documentada no `run.md` como opcional. Sem token: funciona com rate limit menor.
+Documentada em `run.md` como opcional.
 
 ---
 
 ## Testes
 
-### `quotes.test.ts` — 4 testes de `enrichWithQuotes` (sem fetch, sem banco)
+### `quotes.test.ts` — 4 testes (função pura, sem fetch, sem banco)
 
 | Caso | Validação |
 |------|-----------|
 | P&L positivo | currentValue, gainLoss e gainLossPercent corretos |
-| Ticker ausente | todos os campos null |
+| Ticker ausente no mapa | todos os campos null |
 | P&L negativo | gainLoss.isNegative() = true |
 | totalCost zero | gainLossPercent = 0 (sem divisão por zero) |
 
@@ -156,14 +164,14 @@ Documentada no `run.md` como opcional. Sem token: funciona com rate limit menor.
 
 | Caso | Validação |
 |------|-----------|
-| P&L positivo | elemento com classe verde presente |
+| P&L positivo | elemento com classe de cor positiva presente |
 | currentPrice null | seção "Valor atual" ausente do DOM |
 
 ---
 
-## Fora de Escopo (fase atual)
+## Fora de Escopo
 
 - Séries históricas de preços
 - Gráfico de evolução de patrimônio no tempo
-- Alertas de preço (price target)
-- WebSocket / atualizacão em tempo real (atua com polling via revalidate)
+- Alertas de preço
+- WebSocket / atualizacão sub-segundo
