@@ -1,5 +1,7 @@
 # Módulo: Import B3
 
+**Última atualização:** 2026-04-13
+
 ## Visão Geral
 
 Permite ao usuário importar os três tipos de planilha exportados pela B3 (CEI / Canal Eletrônico do Investidor):
@@ -135,7 +137,7 @@ export async function syncPosicao(rows: PosicaoRow[]): Promise<SyncResult>
 
 - `persistNegociacao` / `persistMovimentacao`: para cada row, busca ou cria o `Asset` via `getAssetByTicker` + upsert, depois chama `createTransaction` com `referenceId` para garantir idempotência
 - `syncPosicao`: faz upsert de `Asset` com nome completo, category e assetClassId inferido
-- Fallback BDR → `STOCK` aplicado no service (ver [ADR-004](../decisions/004-bdr-fallback-to-stock.md))
+- `BDR` ja e categoria nativa do enum `AssetCategory` no schema atual
 
 ---
 
@@ -199,7 +201,7 @@ SheetJS — leve, sem dependência de stream, funciona em Server Actions Next.js
 | `movimentacao.test.ts` | classificação de Rendimento/DIVIDEND, ignorar Cessão de Direitos, ignorar Atualização |
 | `posicao.test.ts` | parse de ação (STOCK), parse de FII (Cotas), parse de BDR com fallback |
 
-**Resultado:** 10 novos testes / 103 total — 0 falhas.
+**Resultado do modulo:** 10 testes especificos de parser/importacao — 0 falhas.
 
 ---
 
