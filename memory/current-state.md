@@ -1,164 +1,161 @@
 # Estado atual do projeto
 
-**Última atualização:** 2026-04-13
+**Última atualização:** 2026-04-13 (checkpoint pré-Fase 3)
 
 ## Stack confirmada
 - Prisma ORM 7.7.0 + PostgreSQL (investbr)
 - Adapter obrigatório: @prisma/adapter-pg + pg
 - Next.js 16.2.2 + React 19.2.4 (App Router)
-- Tailwind CSS 4.2.2 (CSS-first)
-- NextAuth v5 (magic link com Nodemailer + sessions em banco)
-- Vitest 4.1.3 + Testing Library (jsdom em testes de componente)
+- Tailwind CSS 4.2.2 (CSS-first, sem tailwind.config.js)
+- NextAuth v5 (magic link + Nodemailer + sessions em banco)
+- Vitest 4.1.3 + Testing Library (jsdom por arquivo de componente)
 - TypeScript + alias @/*
-- xlsx (SheetJS) ^0.18.5 — leitura de planilhas B3 em Server Actions
+- xlsx (SheetJS) ^0.18.5
+- decimal.js (Decimal) — nunca substituir por number nativo em valores monetários
 
-## Módulo Cadastro: Instituições e Contas
-Status: implementado e estabilizado.
-- src/modules/institutions/service.ts — createInstitution, listInstitutions, updateInstitution
-- src/modules/accounts/service.ts — createAccount, getAccountsByPortfolio, getAccountsByClient, updateAccount
-- Regras: Account exige clientId e institutionId; portfolioId opcional
+## Rotas ativas (confirmadas em pnpm next build)
 
-## Entidades e vínculos relevantes
-- User 1-N Client, User 1-N Portfolio
-- Institution 1-N Account, Client 1-N Account
-- Portfolio 1-N Account (opcional)
+| Rota | Status |
+|------|--------|
+| `/dashboard` | ✅ ativo |
+| `/dashboard/insights` | ✅ ativo |
+| `/dashboard/insights/config` | ✅ ativo |
+| `/dashboard/insights/profiles` | ✅ ativo |
+| `/accounts` | ✅ ativo |
+| `/accounts/new` | ✅ ativo |
+| `/transactions` | ✅ ativo |
+| `/transactions/new` | ✅ ativo |
+| `/income` | ✅ ativo |
+| `/income/new` | ✅ ativo |
+| `/positions` | ✅ ativo |
+| `/performance` | ✅ ativo |
+| `/import` | ✅ ativo |
+| `/assets` | ✅ ativo |
+| `/institutions` | ✅ ativo |
+| `/login` | ✅ ativo |
+| `/login/verify` | ✅ ativo |
+| `/api/auth/[...nextauth]` | ✅ ativo |
 
-## Schema e migrations
-- 20260408002729_institutions_accounts
-- 20260409120000_add_client_and_account_constraints
-- add_bdr_to_asset_category (2026-04-13)
+## Testes (auditados em 2026-04-13)
 
-## Enum AssetCategory (estado atual)
+**Total: 124 passed, 0 failed, 0 skipped**
+
+### Componentes
+| Arquivo | Casos |
+|---------|-------|
+| AccountCard.test.tsx | 6 |
+| AllocationChart.test.tsx | 3 |
+| IncomeCard.test.tsx | 7 |
+| InsightRulesForm.test.tsx | 4 |
+| insights.test.tsx | 7 |
+| LoginPage.test.tsx | 4 |
+| PositionCard.test.tsx | 5 |
+| Sidebar.test.tsx | 3 |
+
+### Módulos / lib
+| Arquivo | Casos |
+|---------|-------|
+| quotes.test.ts | 4 |
+| accounts.test.ts | 11 |
+| actions.test.ts | 7 |
+| assets.test.ts | 7 |
+| movimentacao.test.ts | 3 |
+| negociacao.test.ts | 2 |
+| posicao.test.ts | 2 |
+| dashboard.test.ts | 4 |
+| history.test.ts | 5 |
+| income.test.ts | 8 |
+| insights.test.ts | 10 |
+| institutions.test.ts | 10 |
+| positions.test.ts | 5 |
+| transactions.test.ts | 7 |
+
+## Decisões técnicas ativas
+
+| DEC | Descrição | Status |
+|-----|-----------|--------|
+| DEC-001 | Prisma 7 com adapter pg obrigatório | ✅ |
+| DEC-005 | AssetCategory (enum) separado de AssetClass (model) | ✅ |
+| DEC-008 | Prisma externalizado no runtime Node do Next.js | ✅ |
+| DEC-009 | Tailwind v4 sem tailwind.config.js | ✅ |
+| DEC-010 | jsdom por arquivo nos testes de componente | ✅ confirmado |
+| DEC-014 | Account com Client e Institution obrigatórios; Portfolio opcional | ✅ |
+| DEC-015 | Insights V1 calculados on-the-fly, sem tabela Insight persistida | ✅ |
+| DEC-016 | Decimal → string/number antes de cruzar boundary Server→Client | ✅ confirmado em /positions, /dashboard, /performance |
+| DEC-017 | Sem `any` explícito em código de produção | ⚠️ **PENDÊNTE** — violações em service.ts:202-203 e config-service.ts:18,250,251,353 |
+| ADR-004 | BDR fallback resolvido; enum BDR confirmado em schema.prisma | ✅ |
+
+## Módulos implementados
+
+### Cadastro (Instituições e Contas)
+Status: ✅ estabilizado  
+Contratos: createInstitution, listInstitutions, updateInstitution, createAccount, getAccountsByPortfolio, getAccountsByClient, updateAccount  
+Regras: Account exige clientId + institutionId; portfolioId opcional
+
+### Import B3 (Prompt 8)
+Status: ✅ implementado  
+Arquivos-chave: src/modules/b3/parser/{negociacao,movimentacao,posicao}.ts, src/modules/b3/service.ts  
+Idempotência via referenceId; ticker fracionário normalizado (sufixo F removido)  
+Ignorados: Cessão de Direitos, Subscrição, Atualização
+
+### Posições (Prompt 9)
+Status: ✅ implementado  
+Arquivos-chave: src/modules/positions/service.ts, types.ts  
+Contrato: getPositions(userId) — 1 query, Map<assetId> em memória  
+Filtros client-side por AssetCategory e AssetClass
+
+### Dashboard v2 (Prompt 10)
+Status: ✅ implementado  
+Arquivos-chave: src/app/(app)/dashboard/data.ts, AllocationChart.tsx  
+N+1 eliminado: getDashboardData usa getPositions(userId)  
+calcAllocation() pura e exportada  
+KPIs: Patrimônio (custo) | Ativos | Proventos/mês | Valor de Mercado
+
+### Cotações (Prompt 11)
+Status: ✅ implementado  
+Arquivos-chave: src/lib/quotes.ts, src/modules/positions/types.ts  
+API: Brapi.dev — batching 50/req, cache 5min, falha silenciosa  
+Tipos: PositionWithQuote, SerializedPositionWithQuote, enrichWithQuotes()  
+Variável: BRAPI_TOKEN (.env.local, opcional)
+
+### Rentabilidade / Performance (Prompt 12)
+Status: ✅ implementado  
+Arquivos-chave: src/modules/positions/history.ts, src/app/(app)/performance/  
+Contratos: calcPatrimonyHistory(userId, period), calcSnapshotsFromTxs(txs, dates)  
+Seletor client-side: page.tsx carrega ALL, client filtra sem re-fetch  
+KPIs: P&L total, variação %, melhor mês, maior posição
+
+### Insights / Rebalanceamento
+Status: ✅ implementado (on-the-fly, DEC-015)  
+Rotas: /dashboard/insights, /dashboard/insights/config, /dashboard/insights/profiles  
+⚠️ DEC-017 pendente: `any` explícito em service.ts e config-service.ts
+
+## Enum AssetCategory
 ```
 STOCK | FII | ETF | FIXED_INCOME | FUND | CRYPTO | METAL | REAL_ESTATE | CASH | BDR
 ```
 
-## Testes
-- Suíte completa: **119 passed, 0 failed** (validado em 2026-04-13)
-- Prompt 8 (Import B3): 10 testes
-- Prompt 9 (Posições): 5 testes
-- Prompt 10 (Dashboard v2): 7 testes
-- Prompt 11 (Cotações): 4 quotes.test.ts + 2 PositionCard.test.tsx = **6 novos** (119 - 6 = 113 base real)
-- Helper: __tests__/helpers/fixtures.ts
-
-## Decisões ativas
-- DEC-001: Prisma 7 com adapter pg obrigatório
-- DEC-005: AssetCategory (enum) separado de AssetClass (model)
-- DEC-008: Prisma externalizado no runtime Node do Next.js
-- DEC-009: Tailwind v4 sem tailwind.config.js
-- DEC-010: jsdom por arquivo nos testes de componente
-- DEC-014: Account com Client e Institution obrigatórios; Portfolio opcional
-- DEC-015: Insights V1 calculados on-the-fly, sem tabela Insight persistida
-- DEC-016: Decimal → string/number antes de cruzar boundary Server→Client
-- DEC-017: Tipagem de resposta de API externa com tipos dedicados (sem `any` explícito)
-- ADR-004: BDR fallback resolvido no Prompt 9
-
-## Módulo Proventos (Income)
-Status: implementado — listagem (últimos 50) e cadastro de IncomeEvent.
-Fora de escopo: RentalReceipt, edição/exclusão, paginação.
-
-## Módulo Import B3 (Prompt 8)
-Status: implementado — Negociação, Movimentação e Posição.
-- Parsers puros em src/modules/b3/parser/
-- Idempotência via referenceId; ticker fracionário normalizado
-- Tipos de movimentação ignorados: Cessão de Direitos, Subscrição, Atualização
-
-## Módulo Posições (Prompt 9)
-Status: implementado — /positions com custo médio ponderado.
-- getPositions(userId) — 1 query, Map<assetId> em memória
-- Position, PositionSummary, AllocationItem em types.ts
-- Filtros client-side por AssetCategory e AssetClass
-
-## Módulo Dashboard v2 (Prompt 10)
-Status: implementado.
-- getDashboardData() usa getPositions() — sem N+1
-- calcAllocation() pura e exportada
-- AllocationChart.tsx — donut SVG nativo + legenda + Top 3 com "Outros"
-- KPIs: Patrimônio (custo) | Ativos | Proventos/mês
-
-## Módulo Cotações (Prompt 11)
-Status: implementado — P&L e valor de mercado em tempo real.
-
-### Escopo entregue
-- src/lib/quotes.ts — getQuotes(tickers[]) com batching (50/req) + cache 5min (next: { revalidate: 300 }) + falha silenciosa
-- src/modules/positions/types.ts — PositionWithQuote, SerializedPositionWithQuote, enrichWithQuotes() pura
-- /positions/page.tsx — enriquece posições com cotações antes do client
-- position-card.tsx (módulo positions) — P&L e var. dia condicionais
-- src/components/PositionCard.tsx — props de P&L/quote adicionadas
-- dashboard/data.ts — top5 enriquecido + totalCurrentValue
-- dashboard/page.tsx — novo KPI "Valor de Mercado"
-- run.md — BRAPI_TOKEN documentado como opcional
-
-### API: Brapi.dev
-- Gratuita, cobre B3 completa (STOCK, FII, ETF, BDR)
-- Até 50 tickers/request — batching automático
-- BRAPI_TOKEN via .env.local (opcional)
-- Falha silenciosa: 429/5xx retorna [], nunca quebra a página
-
-### Tipos novos
-```typescript
-PositionWithQuote = Position & {
-  currentPrice:    number | null
-  currentValue:    Decimal | null
-  gainLoss:        Decimal | null
-  gainLossPercent: Decimal | null
-  quoteChangePct:  number | null
-  quotedAt:        Date | null
-}
-SerializedPositionWithQuote   // versão string/null para cruzar boundary Server→Client
-```
-
-## Cotações em tempo real (Prompt 11)
-
-Status: implementado.
-
-### Escopo entregue
-- Serviço de cotações Brapi com cache server-side (`revalidate: 300`) em `src/lib/quotes.ts`.
-- Enriquecimento de posições com métricas de mercado via função pura `enrichWithQuotes`.
-- Dashboard com KPI adicional de valor de mercado.
-- Cards de posição com P&L e variação diária quando cotação está disponível.
-- Falha de API com fallback silencioso (não quebra página).
-
-### Testes
-- `__tests__/lib/quotes.test.ts` cobrindo cálculos de enriquecimento.
-- `__tests__/components/PositionCard.test.tsx` atualizado para cenários de P&L.
-
-## Rentabilidade e evolução patrimonial (Prompt 12)
-
-Status: implementado.
-
-### Escopo entregue
-- Novo módulo retrospectivo em `src/modules/positions/history.ts`:
-	- `calcPatrimonyHistory(userId, period)`
-	- `calcSnapshotsFromTxs(transactions, dates)` (função pura)
-- Nova rota protegida `/performance` com:
-	- seletor de período client-side sem refetch,
-	- gráfico de linha com Recharts,
-	- KPIs de P&L total, variação total, melhor mês e maior posição.
-- Sidebar com novo item `Rentabilidade` entre `Posições` e `Importar B3`.
-
-### Testes
-- `__tests__/modules/history.test.ts` com 5 cenários de cálculo retrospectivo.
-- `__tests__/components/Sidebar.test.tsx` atualizado para novo item e ordem.
-
-### Build e qualidade
-- `pnpm vitest run`: 124 passed, 0 failed.
-- `pnpm next build`: sucesso com rota `/performance` publicada.
-
 ## Build e Qualidade
 
 **Última validação:** 2026-04-13  
-**Build TypeScript:** ✅ Zero erros  
-**Testes:** ✅ 119 passed, 0 failed  
-**Rotas ativas:** /dashboard | /accounts | /transactions | /income | /positions | /import  
-**N+1:** ✅ Eliminados  
-**Decimal→Client:** ✅ DEC-016 + SerializedPositionWithQuote  
-**Sem `any` explícito:** ✅ DEC-017 — tipos dedicados para resposta Brapi  
+**Build:** ✅ pnpm next build — zero erros TypeScript  
+**Testes:** ✅ 124 passed, 0 failed  
+**DEC-017:** ⚠️ pendência — corrigir antes do Prompt 13  
 
-## Pendências abertas
-- Snapshot histórico de patrimônio (evolução no tempo) — Prompt 12
-- P&L consolidado da carteira (gráfico de rentabilidade)
+## Pendências para Fase 3
+
+| # | Módulo | Escopo |
+|---|--------|--------|
+| P13 | Fix DEC-017 | Tipar `any` em service.ts:202-203 e config-service.ts:18,250,251,353 |
+| P14 | Movimentações v2 | Filtros por período, ativo, tipo |
+| P15 | Edição/Exclusão | Transações e proventos |
+| P16 | Paginação | Todas as listagens |
+| P17 | Polish MVP | Empty states, skeletons, responsividade |
+
+## Fora de escopo (MVP)
 - AssetIdentifier (múltiplos identificadores por ativo)
 - RentalReceipt (aluguéis de imóveis)
-- Edição/exclusão de transações e proventos
-- Paginação nas listagens
+- Alertas de preço (price target)
+- Snapshot histórico de valor de mercado (Rentabilidade v2 com cotações históricas)
+- WebSocket / atualização sub-segundo
+- Multi-portfólio com rebalanceamento automático
