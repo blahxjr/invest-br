@@ -5,7 +5,8 @@
  * Portfolio > Client > User > Global
  */
 
-import { prisma as prismaClient } from '@/lib/prisma'
+import { Prisma } from '@prisma/client'
+import { prisma } from '@/lib/prisma'
 import {
   EffectiveInsightsConfig,
   EffectiveInsightRule,
@@ -15,7 +16,23 @@ import {
   INSIGHT_DEFAULT_THRESHOLD_BY_TYPE,
 } from './types'
 
-const prismaUnsafe = prismaClient as any
+/**
+ * Tipo para item do catálogo de tipos de insight.
+ */
+type InsightTypeCatalogItem = {
+  id: string
+  code: string
+  label: string
+  description: string | null
+  defaultThreshold: Prisma.Decimal
+}
+
+/**
+ * Tipo para regra de configuração com tipo de insight associado.
+ */
+type InsightConfigRuleWithType = Prisma.InsightConfigRuleGetPayload<{
+  include: { insightType: true }
+}>
 
 export type InsightRuleInput = {
   code: string
@@ -68,7 +85,7 @@ export async function resolveInsightProfile(
   portfolioId?: string | null
 ): Promise<ResolvedInsightProfile> {
   if (portfolioId) {
-    const portfolio = await prismaUnsafe.portfolio.findUnique({
+    const portfolio = await prisma.portfolio.findUnique({
       where: { id: portfolioId },
       select: { insightConfigProfileId: true },
     })
@@ -78,7 +95,7 @@ export async function resolveInsightProfile(
     }
   }
 
-  const client = await prismaUnsafe.client.findUnique({
+  const client = await prisma.client.findUnique({
     where: { id: clientId },
     select: { insightConfigProfileId: true },
   })
@@ -87,7 +104,7 @@ export async function resolveInsightProfile(
     return { profileId: client.insightConfigProfileId, scope: 'CLIENT' }
   }
 
-  const user = await prismaUnsafe.user.findUnique({
+  const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { insightConfigProfileId: true },
   })
@@ -96,7 +113,7 @@ export async function resolveInsightProfile(
     return { profileId: user.insightConfigProfileId, scope: 'USER' }
   }
 
-  const globalProfile = await prismaUnsafe.insightConfigProfile.findFirst({
+  const globalProfile = await prisma.insightConfigProfile.findFirst({
     where: {
       scope: 'GLOBAL',
       isSystemDefault: true,
@@ -123,7 +140,7 @@ export async function resolveEffectiveInsightsConfig(
 ): Promise<EffectiveInsightsConfig> {
   const config = baseConfig()
 
-  const types = await prismaUnsafe.insightType.findMany({
+  const types = await prisma.insightType.findMany({
     where: { isActive: true },
     select: { code: true, defaultThreshold: true },
   })
@@ -145,7 +162,7 @@ export async function resolveEffectiveInsightsConfig(
     return config
   }
 
-  const rules = await prismaUnsafe.insightConfigRule.findMany({
+  const rules = await prisma.insightConfigRule.findMany({
     where: {
       profileId: resolvedProfile.profileId,
       profile: { isActive: true },
@@ -179,8 +196,8 @@ export async function resolveEffectiveInsightsConfig(
 /**
  * Lista catálogo ativo de tipos de insight.
  */
-export async function listInsightTypeCatalog() {
-  return prismaUnsafe.insightType.findMany({
+export async function listInsightTypeCatalog(): Promise<InsightTypeCatalogItem[]> {
+  return prisma.insightType.findMany({
     where: { isActive: true },
     orderBy: { code: 'asc' },
     select: {
@@ -197,7 +214,7 @@ export async function listInsightTypeCatalog() {
  * Obtém ou cria perfil USER padrão para o usuário autenticado.
  */
 export async function getOrCreateUserInsightProfile(userId: string) {
-  const user = await prismaUnsafe.user.findUnique({
+  const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { id: true, insightConfigProfileId: true },
   })
@@ -207,7 +224,7 @@ export async function getOrCreateUserInsightProfile(userId: string) {
   }
 
   if (user.insightConfigProfileId) {
-    const existing = await prismaUnsafe.insightConfigProfile.findUnique({
+    const existing = await prisma.insightConfigProfile.findUnique({
       where: { id: user.insightConfigProfileId },
     })
     if (existing) {
@@ -215,7 +232,7 @@ export async function getOrCreateUserInsightProfile(userId: string) {
     }
   }
 
-  const profile = await prismaUnsafe.insightConfigProfile.create({
+  const profile = await prisma.insightConfigProfile.create({
     data: {
       name: 'Minhas Regras de Insights',
       description: 'Perfil padrão de configuração do usuário.',
@@ -225,7 +242,7 @@ export async function getOrCreateUserInsightProfile(userId: string) {
     },
   })
 
-  await prismaUnsafe.user.update({
+  await prisma.user.update({
     where: { id: userId },
     data: { insightConfigProfileId: profile.id },
   })
@@ -241,14 +258,14 @@ export async function getMyInsightRules(userId: string): Promise<InsightRuleView
 
   const [catalog, rules] = await Promise.all([
     listInsightTypeCatalog(),
-    prismaUnsafe.insightConfigRule.findMany({
+    prisma.insightConfigRule.findMany({
       where: { profileId: profile.id },
       include: { insightType: true },
     }),
   ])
 
-  return catalog.map((item: any) => {
-    const rule = rules.find((r: any) => r.insightType.code === item.code)
+  return catalog.map((item: InsightTypeCatalogItem) => {
+    const rule = rules.find((r: InsightConfigRuleWithType) => r.insightType.code === item.code)
     return {
       code: item.code,
       label: item.label,
@@ -280,7 +297,7 @@ export async function createInsightProfile(userId: string, name: string) {
     throw new Error('Nome do perfil é obrigatório')
   }
 
-  return prismaUnsafe.insightConfigProfile.create({
+  return prisma.insightConfigProfile.create({
     data: {
       name: normalized,
       scope: 'CLIENT',
@@ -299,7 +316,7 @@ export async function updateInsightProfileName(userId: string, profileId: string
     throw new Error('Nome do perfil é obrigatório')
   }
 
-  const profile = await prismaUnsafe.insightConfigProfile.findFirst({
+  const profile = await prisma.insightConfigProfile.findFirst({
     where: { id: profileId, ownerUserId: userId },
     select: { id: true },
   })
@@ -308,7 +325,7 @@ export async function updateInsightProfileName(userId: string, profileId: string
     throw new Error('Perfil não encontrado para atualização')
   }
 
-  await prismaUnsafe.insightConfigProfile.update({
+  await prisma.insightConfigProfile.update({
     where: { id: profileId },
     data: { name: normalized },
   })
@@ -318,7 +335,7 @@ export async function updateInsightProfileName(userId: string, profileId: string
  * Lista perfis do usuário para a tela de consultor.
  */
 export async function listOwnedInsightProfiles(userId: string) {
-  return prismaUnsafe.insightConfigProfile.findMany({
+  return prisma.insightConfigProfile.findMany({
     where: {
       ownerUserId: userId,
       scope: { in: ['USER', 'CLIENT', 'PORTFOLIO'] },
@@ -340,7 +357,7 @@ export async function upsertProfileRules(
   profileId: string,
   rules: InsightRuleInput[]
 ) {
-  const profile = await prismaUnsafe.insightConfigProfile.findFirst({
+  const profile = await prisma.insightConfigProfile.findFirst({
     where: { id: profileId, ownerUserId: userId },
     select: { id: true },
   })
@@ -350,13 +367,15 @@ export async function upsertProfileRules(
   }
 
   const catalog = await listInsightTypeCatalog()
-  const byCode = new Map<string, any>(catalog.map((item: any) => [item.code, item]))
+  const byCode = new Map<string, InsightTypeCatalogItem>(
+    catalog.map((item: InsightTypeCatalogItem) => [item.code, item])
+  )
 
   for (const rule of rules) {
     const type = byCode.get(rule.code)
     if (!type) continue
 
-    await prismaUnsafe.insightConfigRule.upsert({
+    await prisma.insightConfigRule.upsert({
       where: {
         profileId_insightTypeId: {
           profileId,
@@ -383,7 +402,7 @@ export async function upsertProfileRules(
  * Atribui perfil a um cliente do usuário.
  */
 export async function assignProfileToClient(userId: string, clientId: string, profileId: string) {
-  const client = await prismaUnsafe.client.findFirst({
+  const client = await prisma.client.findFirst({
     where: { id: clientId, userId },
     select: { id: true },
   })
@@ -391,7 +410,7 @@ export async function assignProfileToClient(userId: string, clientId: string, pr
     throw new Error('Cliente não encontrado para o usuário')
   }
 
-  const profile = await prismaUnsafe.insightConfigProfile.findFirst({
+  const profile = await prisma.insightConfigProfile.findFirst({
     where: { id: profileId, ownerUserId: userId },
     select: { id: true },
   })
@@ -399,7 +418,7 @@ export async function assignProfileToClient(userId: string, clientId: string, pr
     throw new Error('Perfil inválido para atribuição')
   }
 
-  await prismaUnsafe.client.update({
+  await prisma.client.update({
     where: { id: clientId },
     data: { insightConfigProfileId: profileId },
   })
@@ -409,7 +428,7 @@ export async function assignProfileToClient(userId: string, clientId: string, pr
  * Atribui perfil a uma carteira do usuário.
  */
 export async function assignProfileToPortfolio(userId: string, portfolioId: string, profileId: string) {
-  const portfolio = await prismaUnsafe.portfolio.findFirst({
+  const portfolio = await prisma.portfolio.findFirst({
     where: { id: portfolioId, userId },
     select: { id: true },
   })
@@ -417,7 +436,7 @@ export async function assignProfileToPortfolio(userId: string, portfolioId: stri
     throw new Error('Carteira não encontrada para o usuário')
   }
 
-  const profile = await prismaUnsafe.insightConfigProfile.findFirst({
+  const profile = await prisma.insightConfigProfile.findFirst({
     where: { id: profileId, ownerUserId: userId },
     select: { id: true },
   })
@@ -425,7 +444,7 @@ export async function assignProfileToPortfolio(userId: string, portfolioId: stri
     throw new Error('Perfil inválido para atribuição')
   }
 
-  await prismaUnsafe.portfolio.update({
+  await prisma.portfolio.update({
     where: { id: portfolioId },
     data: { insightConfigProfileId: profileId },
   })
@@ -435,7 +454,7 @@ export async function assignProfileToPortfolio(userId: string, portfolioId: stri
  * Remove perfil do usuário (sem remover o catálogo).
  */
 export async function deleteInsightProfile(userId: string, profileId: string) {
-  const profile = await prismaUnsafe.insightConfigProfile.findFirst({
+  const profile = await prisma.insightConfigProfile.findFirst({
     where: { id: profileId, ownerUserId: userId },
     select: { id: true },
   })
@@ -443,21 +462,21 @@ export async function deleteInsightProfile(userId: string, profileId: string) {
     throw new Error('Perfil não encontrado para exclusão')
   }
 
-  await prismaUnsafe.$transaction([
-    prismaUnsafe.user.updateMany({
+  await prisma.$transaction([
+    prisma.user.updateMany({
       where: { insightConfigProfileId: profileId, id: userId },
       data: { insightConfigProfileId: null },
     }),
-    prismaUnsafe.client.updateMany({
+    prisma.client.updateMany({
       where: { insightConfigProfileId: profileId, userId },
       data: { insightConfigProfileId: null },
     }),
-    prismaUnsafe.portfolio.updateMany({
+    prisma.portfolio.updateMany({
       where: { insightConfigProfileId: profileId, userId },
       data: { insightConfigProfileId: null },
     }),
-    prismaUnsafe.insightConfigRule.deleteMany({ where: { profileId } }),
-    prismaUnsafe.insightConfigProfile.delete({ where: { id: profileId } }),
+    prisma.insightConfigRule.deleteMany({ where: { profileId } }),
+    prisma.insightConfigProfile.delete({ where: { id: profileId } }),
   ])
 }
 

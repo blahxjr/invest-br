@@ -10,7 +10,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid'
-import { Prisma } from '@prisma/client'
+import { Prisma, Account } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 
 import {
@@ -189,6 +189,16 @@ export async function getInsightsForClient(
   return insights
 }
 
+type TransactionWithAsset = Prisma.TransactionGetPayload<{
+  include: {
+    asset: {
+      include: {
+        assetClass: true
+      }
+    }
+  }
+}>
+
 /**
  * Consolidar posições virtuais a partir de transações.
  *
@@ -199,8 +209,8 @@ export async function getInsightsForClient(
  * - Breakdown por conta
  */
 function consolidarPosicoes(
-  transactions: any[],
-  accounts: any[]
+  transactions: TransactionWithAsset[],
+  accounts: Account[]
 ): ConsolidatedPosition[] {
   const positionsMap = new Map<string, ConsolidatedPosition>()
   const accountsMap = new Map(accounts.map((a) => [a.id, a]))
@@ -239,10 +249,14 @@ function consolidarPosicoes(
     }
 
     // Atualizar quantidade e preço médio
+    if (!tx.quantity || !tx.price) {
+      continue
+    }
+
     const currentQty = new Prisma.Decimal(position.quantity)
     const currentValue = new Prisma.Decimal(position.totalCost)
     const txQty = new Prisma.Decimal(tx.quantity)
-    const txPrice = tx.price ? new Prisma.Decimal(tx.price) : new Prisma.Decimal(0)
+    const txPrice = new Prisma.Decimal(tx.price)
 
     if (tx.type === 'BUY') {
       const newQty = currentQty.plus(txQty)
