@@ -29,9 +29,18 @@ describe('Sidebar', () => {
     expect(screen.getAllByText('Ativos').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Movimentações').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Posições').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Rentabilidade').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Importar B3').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Proventos').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Regras Insights').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Perfis Insights').length).toBeGreaterThan(0)
+
+    const labels = screen.getAllByRole('link').map((link) => link.textContent?.trim())
+    expect(labels.indexOf('Posições')).toBeGreaterThan(-1)
+    expect(labels.indexOf('Rentabilidade')).toBeGreaterThan(-1)
+    expect(labels.indexOf('Importar B3')).toBeGreaterThan(-1)
+    expect(labels.indexOf('Posições')).toBeLessThan(labels.indexOf('Rentabilidade'))
+    expect(labels.indexOf('Rentabilidade')).toBeLessThan(labels.indexOf('Importar B3'))
   })
 
   it('links apontam para as rotas corretas', () => {

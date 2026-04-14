@@ -6,7 +6,12 @@ export interface PositionCardProps {
   name: string
   quantity: number
   averageCost: number
-  currentValue?: number
+  totalCost?: number
+  currentPrice?: number | null
+  currentValue?: number | null
+  gainLoss?: number | null
+  gainLossPercent?: number | null
+  quoteChangePct?: number | null
   category: string
 }
 
@@ -23,15 +28,17 @@ export default function PositionCard({
   name,
   quantity,
   averageCost,
+  totalCost,
+  currentPrice,
   currentValue,
+  gainLoss,
+  gainLossPercent,
+  quoteChangePct,
   category,
 }: PositionCardProps) {
-  const totalCost = quantity * averageCost
-  const hasCurrentValue = currentValue != null && currentValue > 0
-  const totalCurrent = hasCurrentValue ? currentValue * quantity : totalCost
-  const gainLoss = totalCurrent - totalCost
-  const gainLossPct = totalCost > 0 ? (gainLoss / totalCost) * 100 : 0
-  const isPositive = gainLoss >= 0
+  const computedTotalCost = totalCost ?? quantity * averageCost
+  const hasQuote = currentPrice != null && currentValue != null && gainLoss != null && gainLossPercent != null
+  const isPositive = hasQuote ? gainLoss >= 0 : true
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow cursor-pointer">
@@ -56,24 +63,37 @@ export default function PositionCard({
         </div>
         <div>
           <p className="text-gray-500 text-xs">Custo total</p>
-          <p className="font-semibold text-gray-900">{formatCurrency(totalCost)}</p>
+          <p className="font-semibold text-gray-900">{formatCurrency(computedTotalCost)}</p>
         </div>
-        <div>
-          <p className="text-gray-500 text-xs">Valor atual</p>
-          <p className="font-semibold text-gray-900">{formatCurrency(totalCurrent)}</p>
-        </div>
+        {hasQuote && (
+          <div>
+            <p className="text-gray-500 text-xs">Valor atual</p>
+            <p className="font-semibold text-gray-900">{formatCurrency(currentValue)}</p>
+          </div>
+        )}
       </div>
 
-      <div
-        className={clsx(
-          'mt-3 flex items-center gap-1 text-sm font-semibold',
-          isPositive ? 'text-green-600' : 'text-red-600'
-        )}
-      >
-        {isPositive ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-        <span>{formatCurrency(gainLoss)}</span>
-        <span className="text-xs font-normal">({formatVariation(gainLossPct)})</span>
-      </div>
+      {hasQuote && (
+        <>
+          <div
+            className={clsx(
+              'mt-3 flex items-center gap-1 text-sm font-semibold',
+              isPositive ? 'text-green-600' : 'text-red-600',
+            )}
+          >
+            {isPositive ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
+            <span>{formatCurrency(gainLoss)}</span>
+            <span className="text-xs font-normal">({formatVariation(gainLossPercent)})</span>
+          </div>
+
+          <div className="mt-1 text-xs font-medium">
+            <span className="text-gray-500">Var. dia: </span>
+            <span className={clsx((quoteChangePct ?? 0) >= 0 ? 'text-green-600' : 'text-red-600')}>
+              {quoteChangePct != null ? formatVariation(quoteChangePct) : '—'}
+            </span>
+          </div>
+        </>
+      )}
     </div>
   )
 }

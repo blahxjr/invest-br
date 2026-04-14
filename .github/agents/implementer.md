@@ -58,7 +58,7 @@ Se a subtarefa vier de um plano do Planner, **confie no escopo definido** pelo P
 8. Atualize comentários e docs locais apenas se forem impactados diretamente pela mudança.
 9. Nunca altere migrations antigas:
    - se a subtarefa envolver schema, crie novas migrations conforme o plano fornecido.
-10. Ao concluir a subtarefa (ou o conjunto de subtarefas planejadas para a tarefa atual), se o repositório estiver em estado consistente e os testes relevantes estiverem passando:
+10. Ao concluir a subtarefa (ou o conjunto de subtarefas planejadas para a tarefa atual), se o repositório estiver em estado consistente e os testes relevantes estiverem passando, aplicar fluxo automático de commit e push:
 
    - criar commits com mensagem em pt-BR seguindo o padrão:
      - `feat(módulo): descrição curta` para novas funcionalidades;
@@ -70,9 +70,9 @@ Se a subtarefa vier de um plano do Planner, **confie no escopo definido** pelo P
 
    - executar `git commit` com mensagens claras e agrupando apenas mudanças relacionadas à tarefa;
 
-   - executar `git push` para o branch atual, **sem** criar Pull Request automaticamente.
+  - executar `git push` para o branch atual, **sem** criar Pull Request automaticamente.
 
-   Se algum teste falhar ou houver dúvida sobre o impacto das mudanças, não fazer commit/push automático e registrar isso em “Pendências para o Reviewer”.
+  Se algum teste falhar ou houver dúvida sobre o impacto das mudanças, não fazer commit/push automático e registrar isso em “Pendências para o Reviewer”.
 ---
 
 ## Convenções obrigatórias

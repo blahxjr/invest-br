@@ -9,6 +9,7 @@ describe('PositionCard', () => {
     name: 'Petrobras PN',
     quantity: 100,
     averageCost: 35.5,
+    totalCost: 3550,
     category: 'STOCK',
   }
 
@@ -30,15 +31,26 @@ describe('PositionCard', () => {
     expect(screen.getByText('STOCK')).toBeInTheDocument()
   })
 
-  it('mostra variação positiva com ícone de alta quando currentValue > averageCost', () => {
-    render(<PositionCard {...baseProps} currentValue={40} />)
-    // totalCost = 100 * 35.5 = 3550, totalCurrent = 100 * 40 = 4000, gain = 450
-    expect(screen.getByText(/450/)).toBeInTheDocument()
+  it('exibe P&L positivo em verde quando gainLoss > 0', () => {
+    render(
+      <PositionCard
+        {...baseProps}
+        currentPrice={38.45}
+        currentValue={3845}
+        gainLoss={295}
+        gainLossPercent={8.31}
+        quoteChangePct={1.23}
+      />,
+    )
+    expect(screen.getByText(/Var\. dia/i)).toBeInTheDocument()
+    expect(screen.getByText(/\+1\.23%/)).toBeInTheDocument()
+    const pnl = screen.getByText(/295/)
+    expect(pnl.closest('div')?.className).toMatch(/green/)
   })
 
-  it('mostra variação negativa quando currentValue < averageCost', () => {
-    render(<PositionCard {...baseProps} currentValue={30} />)
-    // totalCost = 3550, totalCurrent = 3000, loss = -550
-    expect(screen.getByText(/-.*550/)).toBeInTheDocument()
+  it('omite seção de P&L quando currentPrice é null', () => {
+    render(<PositionCard {...baseProps} currentPrice={null} />)
+    expect(screen.queryByText(/Var\. dia/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Valor atual/i)).not.toBeInTheDocument()
   })
 })

@@ -22,6 +22,8 @@ const navItems = [
   { href: '/assets', label: 'Ativos', icon: TrendingUp },
   { href: '/transactions', label: 'Movimentações', icon: ArrowLeftRight },
   { href: '/positions', label: 'Posições', icon: BarChart3 },
+  { href: '/performance', label: 'Rentabilidade', icon: TrendingUp },
+  { href: '/import', label: 'Importar B3', icon: BarChart3 },
   { href: '/income', label: 'Proventos', icon: TrendingUp },
   { href: '/dashboard/insights/config', label: 'Regras Insights', icon: TrendingUp },
   { href: '/dashboard/insights/profiles', label: 'Perfis Insights', icon: TrendingUp },

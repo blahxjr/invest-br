@@ -25,6 +25,7 @@ Crie um arquivo `.env.local` na raiz do projeto com:
 ```env
 DATABASE_URL=postgresql://USUARIO:SENHA@localhost:5432/investbr
 AUTH_SECRET=sua_chave_bem_grande_e_aleatoria
+BRAPI_TOKEN=seu_token_opcional_da_brapi
 EMAIL_SERVER_HOST=localhost
 EMAIL_SERVER_PORT=1025
 EMAIL_FROM=noreply@investbr.local
@@ -39,6 +40,7 @@ EMAIL_SERVER_PASSWORD=sua_senha
 
 Observacao:
 - O projeto le `EMAIL_SERVER_PASSWORD` (nao `EMAIL_SERVER_PASS`).
+- `BRAPI_TOKEN` e opcional. Sem token as cotacoes continuam funcionando, com limite de requisicoes menor.
 
 ## 4) Instalar dependencias
 

@@ -108,6 +108,43 @@ PositionWithQuote = Position & {
 SerializedPositionWithQuote   // versão string/null para cruzar boundary Server→Client
 ```
 
+## Cotações em tempo real (Prompt 11)
+
+Status: implementado.
+
+### Escopo entregue
+- Serviço de cotações Brapi com cache server-side (`revalidate: 300`) em `src/lib/quotes.ts`.
+- Enriquecimento de posições com métricas de mercado via função pura `enrichWithQuotes`.
+- Dashboard com KPI adicional de valor de mercado.
+- Cards de posição com P&L e variação diária quando cotação está disponível.
+- Falha de API com fallback silencioso (não quebra página).
+
+### Testes
+- `__tests__/lib/quotes.test.ts` cobrindo cálculos de enriquecimento.
+- `__tests__/components/PositionCard.test.tsx` atualizado para cenários de P&L.
+
+## Rentabilidade e evolução patrimonial (Prompt 12)
+
+Status: implementado.
+
+### Escopo entregue
+- Novo módulo retrospectivo em `src/modules/positions/history.ts`:
+	- `calcPatrimonyHistory(userId, period)`
+	- `calcSnapshotsFromTxs(transactions, dates)` (função pura)
+- Nova rota protegida `/performance` com:
+	- seletor de período client-side sem refetch,
+	- gráfico de linha com Recharts,
+	- KPIs de P&L total, variação total, melhor mês e maior posição.
+- Sidebar com novo item `Rentabilidade` entre `Posições` e `Importar B3`.
+
+### Testes
+- `__tests__/modules/history.test.ts` com 5 cenários de cálculo retrospectivo.
+- `__tests__/components/Sidebar.test.tsx` atualizado para novo item e ordem.
+
+### Build e qualidade
+- `pnpm vitest run`: 124 passed, 0 failed.
+- `pnpm next build`: sucesso com rota `/performance` publicada.
+
 ## Build e Qualidade
 
 **Última validação:** 2026-04-13  
