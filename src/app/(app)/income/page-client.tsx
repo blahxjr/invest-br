@@ -1,59 +1,50 @@
 // @vitest-environment jsdom
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeftRight, Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2 } from 'lucide-react'
 import Link from 'next/link'
-import { TransactionFilters, type TransactionFilter } from '@/components/TransactionFilters'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { EditModal } from '@/components/ui/EditModal'
-import { updateTransaction, deleteTransaction } from './actions'
+import { updateIncomeEvent, deleteIncomeEvent } from '../transactions/actions'
 
-type Transaction = {
+type IncomeEvent = {
   id: string
   type: string
-  date: string
-  quantity: string | null
-  price: string | null
-  totalAmount: string
+  paymentDate: Date | string
+  grossAmount: { toString(): string }
+  taxAmount: { toString(): string } | null
+  netAmount: { toString(): string }
   asset?: {
-    id: string
     ticker: string | null
-    name: string
   } | null
   account: {
     name: string
   }
+  notes?: string | null
 }
 
-type TransactionRow = Transaction
-
-type Asset = {
-  id: string
-  ticker: string | null
-  name: string
-}
+type IncomeEventRow = IncomeEvent
 
 type Props = {
-  transactions: Transaction[]
-  assets: Asset[]
+  incomeEvents: IncomeEvent[]
   typeLabels: Record<string, string>
-  typeColors: Record<string, string>
 }
 
-const transactionTypesList = ['BUY', 'SELL', 'DEPOSIT', 'WITHDRAWAL', 'DIVIDEND', 'INCOME', 'RENT']
+const incomeTypesList = ['DIVIDEND', 'JCP', 'FII_RENT', 'COUPON', 'RENTAL']
 
-function formatCurrency(value: string | null) {
+function formatCurrency(value: { toString(): string } | string | null) {
   if (!value) return '—'
-  return parseFloat(value).toLocaleString('pt-BR', {
+  const strValue = typeof value === 'string' ? value : value.toString()
+  return parseFloat(strValue).toLocaleString('pt-BR', {
     style: 'currency',
     currency: 'BRL',
   })
 }
 
-function formatDate(dateString: string) {
-  const date = typeof dateString === 'string' ? new Date(dateString) : dateString
+function formatDate(dateValue: Date | string) {
+  const date = typeof dateValue === 'string' ? new Date(dateValue) : dateValue
   return date.toLocaleDateString('pt-BR', {
     day: '2-digit',
     month: 'short',
@@ -61,61 +52,20 @@ function formatDate(dateString: string) {
   })
 }
 
-function filterTransactions(transactions: Transaction[], filter: TransactionFilter): Transaction[] {
-  return transactions.filter((tx) => {
-    // Data De
-    if (filter.dateFrom) {
-      const txDate = new Date(tx.date)
-      const fromDate = new Date(filter.dateFrom)
-      if (txDate < fromDate) return false
-    }
-
-    // Data Até
-    if (filter.dateTo) {
-      const txDate = new Date(tx.date)
-      const toDate = new Date(filter.dateTo)
-      toDate.setHours(23, 59, 59, 999)
-      if (txDate > toDate) return false
-    }
-
-    // Ativo
-    if (filter.assetId && tx.asset?.id !== filter.assetId) {
-      return false
-    }
-
-    // Tipo
-    if (filter.type && tx.type !== filter.type) {
-      return false
-    }
-
-    return true
-  })
-}
-
-export function TransactionsPageClient({
-  transactions,
-  assets,
-  typeLabels,
-  typeColors,
-}: Props) {
+export function IncomePageClient({ incomeEvents, typeLabels }: Props) {
   const router = useRouter()
-  const [filter, setFilter] = useState<TransactionFilter>({})
-  const [editingTransaction, setEditingTransaction] = useState<TransactionRow | null>(null)
-  const [deletingTransaction, setDeletingTransaction] = useState<TransactionRow | null>(null)
+  const [editingEvent, setEditingEvent] = useState<IncomeEventRow | null>(null)
+  const [deletingEvent, setDeletingEvent] = useState<IncomeEventRow | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [editFormData, setEditFormData] = useState<{
-    date: string
+    paymentDate: string
     type: string
-    quantity: string
-    price: string
+    grossAmount: string
+    taxAmount: string
+    netAmount: string
     notes: string
   } | null>(null)
-
-  const filteredTransactions = useMemo(
-    () => filterTransactions(transactions, filter),
-    [transactions, filter]
-  )
 
   // Handlers
   const showToast = (message: string) => {
@@ -123,39 +73,44 @@ export function TransactionsPageClient({
     setTimeout(() => setToastMessage(null), 3000)
   }
 
-  const handleEditClick = (tx: TransactionRow) => {
-    setEditingTransaction(tx)
+  const handleEditClick = (event: IncomeEventRow) => {
+    setEditingEvent(event)
+    const paymentDateValue = typeof event.paymentDate === 'string'
+      ? event.paymentDate.split('T')[0]
+      : event.paymentDate.toISOString().split('T')[0]
     setEditFormData({
-      date: tx.date.split('T')[0], // converte ISO para YYYY-MM-DD
-      type: tx.type,
-      quantity: tx.quantity || '',
-      price: tx.price || '',
-      notes: '', // será preenchido quando buscarmos dados completos
+      paymentDate: paymentDateValue,
+      type: event.type,
+      grossAmount: event.grossAmount.toString(),
+      taxAmount: event.taxAmount?.toString() || '',
+      netAmount: event.netAmount.toString(),
+      notes: event.notes || '',
     })
   }
 
-  const handleDeleteClick = (tx: TransactionRow) => {
-    setDeletingTransaction(tx)
+  const handleDeleteClick = (event: IncomeEventRow) => {
+    setDeletingEvent(event)
   }
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!editingTransaction || !editFormData) return
+    if (!editingEvent || !editFormData) return
 
     setIsLoading(true)
     try {
-      const result = await updateTransaction(editingTransaction.id, {
-        date: new Date(editFormData.date),
+      const result = await updateIncomeEvent(editingEvent.id, {
+        paymentDate: new Date(editFormData.paymentDate),
         type: editFormData.type as any,
-        quantity: editFormData.quantity ? parseFloat(editFormData.quantity) : undefined,
-        price: editFormData.price ? parseFloat(editFormData.price) : undefined,
+        grossAmount: parseFloat(editFormData.grossAmount),
+        taxAmount: editFormData.taxAmount ? parseFloat(editFormData.taxAmount) : null,
+        netAmount: parseFloat(editFormData.netAmount),
         notes: editFormData.notes || undefined,
       })
 
       if (result.success) {
-        setEditingTransaction(null)
+        setEditingEvent(null)
         setEditFormData(null)
-        showToast('Transação atualizada com sucesso')
+        showToast('Provento atualizado com sucesso')
         router.refresh()
       } else {
         showToast(`Erro: ${result.error || 'Falha ao atualizar'}`)
@@ -168,15 +123,15 @@ export function TransactionsPageClient({
   }
 
   const handleDeleteConfirm = async () => {
-    if (!deletingTransaction) return
+    if (!deletingEvent) return
 
     setIsLoading(true)
     try {
-      const result = await deleteTransaction(deletingTransaction.id)
+      const result = await deleteIncomeEvent(deletingEvent.id)
 
       if (result.success) {
-        setDeletingTransaction(null)
-        showToast('Transação excluída')
+        setDeletingEvent(null)
+        showToast('Provento excluído')
         router.refresh()
       } else {
         showToast(`Erro: ${result.error || 'Falha ao excluir'}`)
@@ -192,36 +147,23 @@ export function TransactionsPageClient({
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Movimentações</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Proventos</h1>
           <p className="text-sm text-gray-500 mt-1">
-            {filteredTransactions.length} de {transactions.length} movimentação(ões)
+            {incomeEvents.length} provento(s) registrado(s)
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 text-gray-500">
-            <ArrowLeftRight size={16} />
-            <span className="text-sm">Ledger</span>
-          </div>
-          <Link
-            href="/transactions/new"
-            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-          >
-            <Plus size={16} />
-            Nova Transação
-          </Link>
-        </div>
+        <Link
+          href="/income/new"
+          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+        >
+          <Plus size={16} />
+          Novo Provento
+        </Link>
       </div>
 
-      <TransactionFilters
-        filter={filter}
-        onFilterChange={setFilter}
-        assets={assets}
-        transactionTypes={transactionTypesList}
-      />
-
-      {filteredTransactions.length === 0 ? (
+      {incomeEvents.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">
-          {transactions.length === 0 ? 'Nenhuma movimentação encontrada.' : 'Nenhuma movimentação corresponde aos filtros selecionados.'}
+          Nenhum provento registrado.
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -242,13 +184,13 @@ export function TransactionsPageClient({
                     Conta
                   </th>
                   <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">
-                    Qtd
+                    Bruto
                   </th>
                   <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">
-                    Preço
+                    IR
                   </th>
                   <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">
-                    Total
+                    Líquido
                   </th>
                   <th className="text-center px-4 py-3 text-xs font-medium text-gray-500 uppercase">
                     Ações
@@ -256,45 +198,38 @@ export function TransactionsPageClient({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredTransactions.map((tx) => (
-                  <tr key={tx.id} className="hover:bg-gray-50 transition-colors">
+                {incomeEvents.map((event) => (
+                  <tr key={event.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
-                      {formatDate(tx.date)}
+                      {formatDate(event.paymentDate)}
                     </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                          typeColors[tx.type] ?? 'bg-gray-100 text-gray-600'
-                        }`}
-                      >
-                        {typeLabels[tx.type] ?? tx.type}
-                      </span>
+                    <td className="px-4 py-3 text-gray-700 font-medium">
+                      {typeLabels[event.type] ?? event.type}
                     </td>
                     <td className="px-4 py-3 font-medium text-gray-900">
-                      {tx.asset?.ticker ?? '—'}
-                      {tx.asset?.name && (
-                        <span className="block text-xs text-gray-400 font-normal">{tx.asset.name}</span>
-                      )}
+                      {event.asset?.ticker ?? '—'}
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{tx.account.name}</td>
+                    <td className="px-4 py-3 text-gray-600">{event.account.name}</td>
+                    <td className="px-4 py-3 text-right text-gray-700">
+                      {formatCurrency(event.grossAmount)}
+                    </td>
                     <td className="px-4 py-3 text-right text-gray-600">
-                      {tx.quantity ? parseFloat(tx.quantity).toLocaleString('pt-BR') : '—'}
+                      {formatCurrency(event.taxAmount)}
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(tx.price)}</td>
-                    <td className="px-4 py-3 text-right font-semibold text-gray-900">
-                      {formatCurrency(tx.totalAmount)}
+                    <td className="px-4 py-3 text-right font-semibold text-green-700">
+                      {formatCurrency(event.netAmount)}
                     </td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-2">
                         <button
-                          onClick={() => handleEditClick(tx)}
+                          onClick={() => handleEditClick(event)}
                           className="inline-flex items-center justify-center h-8 w-8 rounded hover:bg-blue-50 text-blue-600 hover:text-blue-700 transition-colors"
                           title="Editar"
                         >
                           <Pencil size={16} />
                         </button>
                         <button
-                          onClick={() => handleDeleteClick(tx)}
+                          onClick={() => handleDeleteClick(event)}
                           className="inline-flex items-center justify-center h-8 w-8 rounded hover:bg-red-50 text-red-600 hover:text-red-700 transition-colors"
                           title="Excluir"
                         >
@@ -319,10 +254,10 @@ export function TransactionsPageClient({
 
       {/* Edit Modal */}
       <EditModal
-        open={editingTransaction !== null && editFormData !== null}
-        title="Editar Transação"
+        open={editingEvent !== null && editFormData !== null}
+        title="Editar Provento"
         onClose={() => {
-          setEditingTransaction(null)
+          setEditingEvent(null)
           setEditFormData(null)
         }}
       >
@@ -332,9 +267,9 @@ export function TransactionsPageClient({
             <input
               type="date"
               required
-              value={editFormData?.date || ''}
+              value={editFormData?.paymentDate || ''}
               onChange={(e) =>
-                setEditFormData((prev) => prev ? { ...prev, date: e.target.value } : null)
+                setEditFormData((prev) => prev ? { ...prev, paymentDate: e.target.value } : null)
               }
               disabled={isLoading}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100"
@@ -353,7 +288,7 @@ export function TransactionsPageClient({
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100"
             >
               <option value="">Selecione um tipo</option>
-              {transactionTypesList.map((type) => (
+              {incomeTypesList.map((type) => (
                 <option key={type} value={type}>
                   {typeLabels[type] || type}
                 </option>
@@ -361,28 +296,43 @@ export function TransactionsPageClient({
             </select>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Quantidade</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Bruto (R$) *</label>
               <input
                 type="number"
-                step="0.000001"
-                value={editFormData?.quantity || ''}
+                step="0.01"
+                required
+                value={editFormData?.grossAmount || ''}
                 onChange={(e) =>
-                  setEditFormData((prev) => prev ? { ...prev, quantity: e.target.value } : null)
+                  setEditFormData((prev) => prev ? { ...prev, grossAmount: e.target.value } : null)
                 }
                 disabled={isLoading}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Preço Unitário</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">IR (R$)</label>
               <input
                 type="number"
                 step="0.01"
-                value={editFormData?.price || ''}
+                value={editFormData?.taxAmount || ''}
                 onChange={(e) =>
-                  setEditFormData((prev) => prev ? { ...prev, price: e.target.value } : null)
+                  setEditFormData((prev) => prev ? { ...prev, taxAmount: e.target.value } : null)
+                }
+                disabled={isLoading}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Líquido (R$) *</label>
+              <input
+                type="number"
+                step="0.01"
+                required
+                value={editFormData?.netAmount || ''}
+                onChange={(e) =>
+                  setEditFormData((prev) => prev ? { ...prev, netAmount: e.target.value } : null)
                 }
                 disabled={isLoading}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100"
@@ -407,7 +357,7 @@ export function TransactionsPageClient({
             <button
               type="button"
               onClick={() => {
-                setEditingTransaction(null)
+                setEditingEvent(null)
                 setEditFormData(null)
               }}
               disabled={isLoading}
@@ -428,20 +378,20 @@ export function TransactionsPageClient({
 
       {/* Delete Confirmation Dialog */}
       <ConfirmDialog
-        open={deletingTransaction !== null}
-        title="Excluir Transação"
+        open={deletingEvent !== null}
+        title="Excluir Provento"
         description={
-          deletingTransaction ? (
-            `Tem certeza que deseja excluir a ${typeLabels[deletingTransaction.type] || deletingTransaction.type
-              } de ${deletingTransaction.asset?.ticker || '—'} em ${formatDate(deletingTransaction.date)} no valor de ${formatCurrency(deletingTransaction.totalAmount)}?`
-          ) : ''
+          deletingEvent
+            ? `Tem certeza que deseja excluir o ${typeLabels[deletingEvent.type] || deletingEvent.type
+            } de ${deletingEvent.asset?.ticker || '—'} em ${formatDate(deletingEvent.paymentDate)} no valor de ${formatCurrency(deletingEvent.netAmount)}?`
+            : ''
         }
         variant="danger"
         confirmText="Excluir"
         cancelText="Cancelar"
         isLoading={isLoading}
         onConfirm={handleDeleteConfirm}
-        onCancel={() => setDeletingTransaction(null)}
+        onCancel={() => setDeletingEvent(null)}
       />
     </div>
   )
