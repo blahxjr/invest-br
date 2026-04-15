@@ -1,6 +1,118 @@
 # Estado atual do projeto
 
-**Última atualização:** 2026-04-13 (checkpoint pre-Fase 3)
+**Última atualização:** 2026-04-27 (MVP v1.0 polish final)
+
+## Stack
+- Next.js 16.2.2 (App Router) + React 19 + TypeScript
+- Tailwind CSS 4.2.2 (CSS-first, sem tailwind.config.js)
+- Prisma 7.7.0 + @prisma/adapter-pg + pg
+- PostgreSQL (schema em prisma/schema.prisma)
+- NextAuth v5 (magic link via Nodemailer, sessoes em banco)
+- Vitest 4.1.3 + @testing-library/react
+- xlsx (SheetJS) para importacao B3
+- decimal.js para valores financeiros
+
+## Rotas ativas
+- /dashboard (com metadata title)
+- /dashboard/insights
+- /dashboard/insights/config
+- /dashboard/insights/profiles
+- /accounts
+- /accounts/new
+- /transactions (com metadata title)
+- /transactions/new
+- /income (com metadata title)
+- /income/new
+- /positions
+- /performance
+- /import
+- /assets
+- /institutions
+- /login
+- /login/verify
+- /api/auth/[...nextauth]
+
+## Modulos implementados
+### Accounts/Institutions
+Status: implementado e coberto por testes.
+Arquivos-chave: src/modules/accounts/service.ts, src/modules/institutions/service.ts
+Contratos: createAccount, getAccountsByPortfolio, getAccountsByClient, updateAccount, createInstitution, listInstitutions, updateInstitution
+
+### Assets
+Status: implementado.
+Arquivos-chave: src/modules/assets/service.ts
+Contratos: createAssetClass, createAsset, getAssetByTicker, getAllAssetClasses, getAssetsByClass
+
+### Transactions/Ledger
+Status: implementado com idempotencia.
+Arquivos-chave: src/modules/transactions/service.ts
+Contratos: createTransaction, getAccountBalance, getTransactionsByAccount
+
+### Income
+Status: implementado para cadastro/listagem e calculo por conta.
+Arquivos-chave: src/modules/income/service.ts
+Contratos: createIncomeEvent, getIncomeEventsByAccount, getTotalIncomeByAccount, createRentalReceipt, getRentalReceiptsByAccount, calculatePositionByAsset, getPositionsByAccount
+
+### Import B3
+Status: implementado (negociacao, movimentacao e posicao).
+Arquivos-chave: src/modules/b3/parser/*.ts, src/modules/b3/service.ts, src/app/(app)/import/actions.ts
+Contratos: parseNegociacaoRow, parseMovimentacaoRow, parsePosicaoRow, persistNegociacao, persistMovimentacao, syncPosicao
+
+### Positions
+Status: implementado com custo medio ponderado + cotacoes + historico de patrimonio.
+Arquivos-chave: src/modules/positions/service.ts, src/modules/positions/types.ts, src/modules/positions/history.ts
+Contratos: calcPositions, summarizePositions, getPositions, enrichWithQuotes, calcSnapshotsFromTxs, calcPatrimonyHistory
+
+### Dashboard
+Status: implementado (v2 + valor de mercado + fallback error).
+Arquivos-chave: src/app/(app)/dashboard/data.ts, src/app/(app)/dashboard/page.tsx
+Contratos: calcAllocation, getDashboardData
+
+### Insights
+Status: implementado (on-the-fly + perfis configuraveis + rebalance com UX polish).
+Arquivos-chave: src/modules/insights/service.ts, src/modules/insights/config-service.ts, src/app/(app)/insights/rebalance/page-client.tsx
+Contratos: computeInsights, resolveEffectiveConfig, upsertInsightProfile, upsertInsightRules
+
+### Performance
+Status: implementado.
+Arquivos-chave: src/app/(app)/performance/page.tsx, src/app/(app)/performance/performance-page-client.tsx, src/components/PatrimonyChart.tsx
+Contratos: rota /performance com filtro client-side por periodo e KPIs de evolucao patrimonial
+
+## UI/UX Polish Final
+- ✅ Componentes reutilizáveis: EmptyState, Skeleton
+- ✅ Loading routes em /dashboard, /transactions, /income, /insights/rebalance
+- ✅ Error boundary em (app)/error.tsx
+- ✅ Responsive design mobile-first em todas as main pages
+- ✅ Rebalance table: desvio visual (▲/▼/✓), status badges com emojis, header tooltips
+- ✅ Rebalance alerts: expandíveis por severidade (CRITICAL/WARNING/INFO)
+- ✅ Quote fallback: "Cotação indisponível" badge + fallback value (totalCost)
+- ✅ Metadata titles: Dashboard, Transactions, Income, Rebalance
+- ✅ Favicon: public/favicon.svg
+- ✅ Navigation mobile: menu hamburger + drawer overlay
+- ✅ Cleanup: zero console.log em src/app, zero `: any` de tipos de domínio
+
+## Testes
+- Total: 187 passed, 0 failed, 0 skipped
+- Arquivos de teste: 34
+- Novos testes P17:
+  - EmptyState.test.tsx: 4
+  - Skeleton.test.tsx: 2
+  - PositionCard.test.tsx: ajustado para fallback
+  - TransactionsPageClient.test.tsx: empty state
+  - IncomePageClient.test.tsx: empty state + outros
+  - RebalancePageClient.test.tsx: desvio visual, empty states
+- Destaques históricos:
+  - __tests__/modules/history.test.ts: 5
+  - __tests__/lib/quotes.test.ts: 4
+  - __tests__/modules/positions.test.ts: 5
+  - __tests__/modules/dashboard.test.ts: 4
+  - __tests__/components/Sidebar.test.tsx: 3
+
+## Build Status
+- ✅ Next.js build: Compiled successfully
+- ✅ TypeScript: No errors ou warnings
+- ✅ All routes pre-calculated
+- ✅ Favicon asset included
 
 ## Stack
 - Next.js 16.2.2 (App Router) + React 19 + TypeScript
@@ -98,6 +210,23 @@ Contratos: rota /performance com filtro client-side por periodo e KPIs de evoluc
 - DEC-010: jsdom por arquivo de teste de componente
 - DEC-011: autenticacao por magic link
 - DEC-012: sessoes em banco
+- DEC-017 (novo): EmptyState + Skeleton como primitivos reutilizáveis para polish
+- DEC-018 (novo): Rebalance desvio visual: ▲ vermelho, ▼ âmbar, ✓ verde
+- DEC-019 (novo): Quote fallback: badge "Cotação indisponível" + totalCost como valor
+
+## Pendências resolvidas neste prompt (P17 polish final)
+- ✅ Responsividade mobile em todas as rotas principais
+- ✅ Empty states com EmptyState component
+- ✅ Loading skeletons em rotas críticas
+- ✅ Error boundary centralizado
+- ✅ Rebalance UX polish: desvio visual, status badges, suggestion colors
+- ✅ Quote fallback UX
+- ✅ Metadata titles padronizadas
+- ✅ Favicon criado
+- ✅ Cleanup console.log e `: any`
+- ✅ +11 testes adicionados/ajustados (187 total)
+- ✅ Build passando
+- ✅ Changelog + memory atualizados
 - DEC-013: session.user.id via callback
 - DEC-014: Account exige clientId e institutionId; portfolioId opcional
 - DEC-015: Insights v1 on-the-fly

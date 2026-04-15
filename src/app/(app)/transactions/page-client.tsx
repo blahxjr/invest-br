@@ -5,18 +5,22 @@ import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeftRight, Plus, Pencil, Trash2 } from 'lucide-react'
 import Link from 'next/link'
+import type { TransactionType } from '@prisma/client'
 import { TransactionFilters, type TransactionFilter } from '@/components/TransactionFilters'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { EditModal } from '@/components/ui/EditModal'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { updateTransaction, deleteTransaction } from './actions'
 
 type Transaction = {
   id: string
+  referenceId?: string
   type: string
   date: string
   quantity: string | null
   price: string | null
   totalAmount: string
+  notes?: string | null
   asset?: {
     id: string
     ticker: string | null
@@ -42,7 +46,7 @@ type Props = {
   typeColors: Record<string, string>
 }
 
-const transactionTypesList = ['BUY', 'SELL', 'DEPOSIT', 'WITHDRAWAL', 'DIVIDEND', 'INCOME', 'RENT']
+const transactionTypesList: TransactionType[] = ['BUY', 'SELL', 'DEPOSIT', 'WITHDRAWAL', 'DIVIDEND', 'INCOME', 'RENT']
 
 function formatCurrency(value: string | null) {
   if (!value) return '—'
@@ -111,6 +115,10 @@ export function TransactionsPageClient({
     price: string
     notes: string
   } | null>(null)
+  const [formErrors, setFormErrors] = useState<{
+    quantity?: string
+    price?: string
+  }>({})
 
   const filteredTransactions = useMemo(
     () => filterTransactions(transactions, filter),
@@ -124,13 +132,14 @@ export function TransactionsPageClient({
   }
 
   const handleEditClick = (tx: TransactionRow) => {
+    setFormErrors({})
     setEditingTransaction(tx)
     setEditFormData({
       date: tx.date.split('T')[0], // converte ISO para YYYY-MM-DD
       type: tx.type,
       quantity: tx.quantity || '',
       price: tx.price || '',
-      notes: '', // será preenchido quando buscarmos dados completos
+      notes: tx.notes || '',
     })
   }
 
@@ -142,11 +151,23 @@ export function TransactionsPageClient({
     e.preventDefault()
     if (!editingTransaction || !editFormData) return
 
+    const nextErrors: { quantity?: string; price?: string } = {}
+    if (editFormData.quantity && parseFloat(editFormData.quantity) < 0) {
+      nextErrors.quantity = 'Quantidade não pode ser negativa.'
+    }
+    if (editFormData.price && parseFloat(editFormData.price) < 0) {
+      nextErrors.price = 'Preço não pode ser negativo.'
+    }
+    setFormErrors(nextErrors)
+    if (Object.keys(nextErrors).length > 0) {
+      return
+    }
+
     setIsLoading(true)
     try {
       const result = await updateTransaction(editingTransaction.id, {
         date: new Date(editFormData.date),
-        type: editFormData.type as any,
+        type: editFormData.type as TransactionType,
         quantity: editFormData.quantity ? parseFloat(editFormData.quantity) : undefined,
         price: editFormData.price ? parseFloat(editFormData.price) : undefined,
         notes: editFormData.notes || undefined,
@@ -190,21 +211,21 @@ export function TransactionsPageClient({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Movimentações</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Movimentações</h1>
           <p className="text-sm text-gray-500 mt-1">
             {filteredTransactions.length} de {transactions.length} movimentação(ões)
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
           <div className="flex items-center gap-2 text-gray-500">
             <ArrowLeftRight size={16} />
             <span className="text-sm">Ledger</span>
           </div>
           <Link
             href="/transactions/new"
-            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors sm:w-auto"
           >
             <Plus size={16} />
             Nova Transação
@@ -220,37 +241,46 @@ export function TransactionsPageClient({
       />
 
       {filteredTransactions.length === 0 ? (
-        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">
-          {transactions.length === 0 ? 'Nenhuma movimentação encontrada.' : 'Nenhuma movimentação corresponde aos filtros selecionados.'}
-        </div>
+        <EmptyState
+          icon="📋"
+          title="Nenhuma transação encontrada"
+          description="Tente ajustar os filtros ou adicione uma nova transação."
+          action={{ label: 'Limpar filtros', onClick: () => setFilter({}) }}
+        />
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto w-full">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">
+                  <th className="text-left px-2 sm:px-4 py-3 text-xs font-medium text-gray-500 uppercase">
                     Data
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">
+                  <th className="text-left px-2 sm:px-4 py-3 text-xs font-medium text-gray-500 uppercase">
                     Tipo
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">
+                  <th className="text-left px-2 sm:px-4 py-3 text-xs font-medium text-gray-500 uppercase">
                     Ativo
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">
+                  <th className="text-left px-2 sm:px-4 py-3 text-xs font-medium text-gray-500 uppercase">
                     Conta
                   </th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">
+                  <th className="text-right px-2 sm:px-4 py-3 text-xs font-medium text-gray-500 uppercase">
                     Qtd
                   </th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">
+                  <th className="text-right px-2 sm:px-4 py-3 text-xs font-medium text-gray-500 uppercase">
                     Preço
                   </th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">
+                  <th className="text-right px-2 sm:px-4 py-3 text-xs font-medium text-gray-500 uppercase">
                     Total
                   </th>
-                  <th className="text-center px-4 py-3 text-xs font-medium text-gray-500 uppercase">
+                  <th className="hidden sm:table-cell text-left px-2 sm:px-4 py-3 text-xs font-medium text-gray-500 uppercase">
+                    Referência
+                  </th>
+                  <th className="hidden sm:table-cell text-left px-2 sm:px-4 py-3 text-xs font-medium text-gray-500 uppercase">
+                    Observações
+                  </th>
+                  <th className="text-center px-2 sm:px-4 py-3 text-xs font-medium text-gray-500 uppercase">
                     Ações
                   </th>
                 </tr>
@@ -258,10 +288,10 @@ export function TransactionsPageClient({
               <tbody className="divide-y divide-gray-100">
                 {filteredTransactions.map((tx) => (
                   <tr key={tx.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                    <td className="px-2 sm:px-4 py-3 text-gray-600 whitespace-nowrap">
                       {formatDate(tx.date)}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-2 sm:px-4 py-3">
                       <span
                         className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                           typeColors[tx.type] ?? 'bg-gray-100 text-gray-600'
@@ -270,21 +300,27 @@ export function TransactionsPageClient({
                         {typeLabels[tx.type] ?? tx.type}
                       </span>
                     </td>
-                    <td className="px-4 py-3 font-medium text-gray-900">
+                    <td className="px-2 sm:px-4 py-3 font-medium text-gray-900">
                       {tx.asset?.ticker ?? '—'}
                       {tx.asset?.name && (
                         <span className="block text-xs text-gray-400 font-normal">{tx.asset.name}</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{tx.account.name}</td>
-                    <td className="px-4 py-3 text-right text-gray-600">
+                    <td className="px-2 sm:px-4 py-3 text-gray-600">{tx.account.name}</td>
+                    <td className="px-2 sm:px-4 py-3 text-right text-gray-600">
                       {tx.quantity ? parseFloat(tx.quantity).toLocaleString('pt-BR') : '—'}
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(tx.price)}</td>
-                    <td className="px-4 py-3 text-right font-semibold text-gray-900">
+                    <td className="px-2 sm:px-4 py-3 text-right text-gray-600">{formatCurrency(tx.price)}</td>
+                    <td className="px-2 sm:px-4 py-3 text-right font-semibold text-gray-900">
                       {formatCurrency(tx.totalAmount)}
                     </td>
-                    <td className="px-4 py-3 text-center">
+                    <td className="hidden sm:table-cell px-2 sm:px-4 py-3 text-gray-500 max-w-40 truncate" title={tx.referenceId || '—'}>
+                      {tx.referenceId || '—'}
+                    </td>
+                    <td className="hidden sm:table-cell px-2 sm:px-4 py-3 text-gray-500 max-w-56 truncate" title={tx.notes || '—'}>
+                      {tx.notes || '—'}
+                    </td>
+                    <td className="px-2 sm:px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-2">
                         <button
                           onClick={() => handleEditClick(tx)}
@@ -361,7 +397,7 @@ export function TransactionsPageClient({
             </select>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Quantidade</label>
               <input
@@ -372,8 +408,11 @@ export function TransactionsPageClient({
                   setEditFormData((prev) => prev ? { ...prev, quantity: e.target.value } : null)
                 }
                 disabled={isLoading}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100"
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-1 disabled:bg-gray-100 ${
+                  formErrors.quantity ? 'border-red-500 focus:ring-red-500' : 'border-gray-300 focus:ring-blue-500'
+                }`}
               />
+              {formErrors.quantity ? <p className="mt-1 text-sm text-red-600">{formErrors.quantity}</p> : null}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Preço Unitário</label>
@@ -385,8 +424,11 @@ export function TransactionsPageClient({
                   setEditFormData((prev) => prev ? { ...prev, price: e.target.value } : null)
                 }
                 disabled={isLoading}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100"
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-1 disabled:bg-gray-100 ${
+                  formErrors.price ? 'border-red-500 focus:ring-red-500' : 'border-gray-300 focus:ring-blue-500'
+                }`}
               />
+              {formErrors.price ? <p className="mt-1 text-sm text-red-600">{formErrors.price}</p> : null}
             </div>
           </div>
 
@@ -403,7 +445,7 @@ export function TransactionsPageClient({
             />
           </div>
 
-          <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200">
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 mt-6 pt-4 border-t border-gray-200">
             <button
               type="button"
               onClick={() => {
@@ -411,16 +453,16 @@ export function TransactionsPageClient({
                 setEditFormData(null)
               }}
               disabled={isLoading}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+              className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={isLoading}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
             >
-              {isLoading ? 'Salvando...' : 'Salvar'}
+              {isLoading ? <span className="inline-block animate-spin">⟳</span> : 'Salvar'}
             </button>
           </div>
         </form>

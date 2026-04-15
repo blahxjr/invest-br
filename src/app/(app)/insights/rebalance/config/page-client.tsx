@@ -83,8 +83,8 @@ export default function ConfigPageClient({ userId, defaultTargets }: Props) {
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="space-y-4">
           {targets.map((target) => (
-            <div key={target.assetClass} className="flex items-center gap-4">
-              <label htmlFor={target.assetClass} className="w-48 text-sm font-medium text-gray-700">
+            <div key={target.assetClass} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+              <label htmlFor={target.assetClass} className="w-full sm:w-48 text-sm font-medium text-gray-700">
                 {CLASS_LABELS[target.assetClass]}
               </label>
               <div className="flex-1 flex items-center gap-2">
@@ -97,7 +97,7 @@ export default function ConfigPageClient({ userId, defaultTargets }: Props) {
                   value={target.targetPct}
                   onChange={(e) => handleTargetChange(target.assetClass, parseFloat(e.target.value) || 0)}
                   disabled={isLoading}
-                  className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100"
+                  className="w-full sm:w-24 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100"
                 />
                 <span className="text-sm text-gray-600 w-8">%</span>
               </div>
@@ -106,8 +106,8 @@ export default function ConfigPageClient({ userId, defaultTargets }: Props) {
         </div>
 
         {/* Linha de total */}
-        <div className="mt-6 pt-4 border-t border-gray-200 flex items-center gap-4">
-          <label className="w-48 text-sm font-semibold text-gray-900">Total</label>
+        <div className="mt-6 pt-4 border-t border-gray-200 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+          <label className="w-full sm:w-48 text-sm font-semibold text-gray-900">Total</label>
           <div className="flex-1 flex items-center gap-2">
             <div
               className={`w-24 px-3 py-2 text-sm font-semibold rounded-lg ${
@@ -145,11 +145,11 @@ export default function ConfigPageClient({ userId, defaultTargets }: Props) {
       )}
 
       {/* Botões */}
-      <div className="flex gap-3">
+      <div className="flex flex-col sm:flex-row gap-3">
         <button
           type="submit"
           disabled={!isSumOk || isLoading}
-          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 transition-colors font-medium flex items-center gap-2"
+          className="w-full sm:w-auto px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 transition-colors font-medium flex items-center justify-center gap-2"
         >
           {isLoading ? (
             <>
@@ -167,7 +167,7 @@ export default function ConfigPageClient({ userId, defaultTargets }: Props) {
           type="button"
           onClick={() => router.back()}
           disabled={isLoading}
-          className="px-6 py-2 bg-gray-200 text-gray-900 rounded-lg hover:bg-gray-300 disabled:bg-gray-100 transition-colors font-medium"
+          className="w-full sm:w-auto px-6 py-2 bg-gray-200 text-gray-900 rounded-lg hover:bg-gray-300 disabled:bg-gray-100 transition-colors font-medium"
         >
           Cancelar
         </button>

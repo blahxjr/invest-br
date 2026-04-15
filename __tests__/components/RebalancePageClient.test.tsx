@@ -47,6 +47,48 @@ describe('RebalancePageClient', () => {
     expect(screen.getByText('Aportar R$ 1.000,00')).toBeInTheDocument()
   })
 
+  it('Exibe indicação visual de desvio e status para classes acima/abaixo do alvo', () => {
+    render(<RebalancePageClient rebalanceResult={mockRebalanceResult as any} alerts={[]} />)
+
+    expect(screen.getByText('▲ 10.0pp')).toBeInTheDocument()
+    expect(screen.getByText('▼ 10.0pp')).toBeInTheDocument()
+    expect(screen.getByText('⬆️ Acima')).toBeInTheDocument()
+    expect(screen.getByText('⬇️ Abaixo')).toBeInTheDocument()
+  })
+
+  it('Mostra empty state quando não há posição na carteira', () => {
+    const noPositionsResult = {
+      ...mockRebalanceResult,
+      totalPortfolioValue: new Decimal(0),
+      allocations: [],
+    }
+
+    render(<RebalancePageClient rebalanceResult={noPositionsResult as any} alerts={[]} />)
+
+    expect(screen.getByText('Sem ativos para analisar')).toBeInTheDocument()
+  })
+
+  it('Mostra call-to-action quando não há alocação alvo configurada', () => {
+    const noTargetsResult = {
+      ...mockRebalanceResult,
+      allocations: [
+        {
+          ...mockRebalanceResult.allocations[0],
+          targetPct: null,
+          deviationPct: null,
+          status: null,
+          suggestionValue: null,
+          suggestionLabel: 'Sem sugestão',
+        },
+      ],
+    }
+
+    render(<RebalancePageClient rebalanceResult={noTargetsResult as any} alerts={[]} />)
+
+    expect(screen.getByText('Configure sua alocação alvo')).toBeInTheDocument()
+    expect(screen.getByText('Configurar agora')).toBeInTheDocument()
+  })
+
   it('Alerta CRITICAL renderiza com cor vermelha', () => {
     const alerts = [
       {

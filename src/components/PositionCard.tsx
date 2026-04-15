@@ -94,6 +94,15 @@ export default function PositionCard({
           </div>
         </>
       )}
+
+      {!hasQuote && (
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
+            Cotação indisponível
+          </span>
+          <span className="text-xs text-gray-500">Valor atual em fallback de custo</span>
+        </div>
+      )}
     </div>
   )
 }

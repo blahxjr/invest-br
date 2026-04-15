@@ -1,7 +1,12 @@
 import { Suspense } from 'react'
+import type { Metadata } from 'next'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
 import { TransactionsPageClient } from './page-client'
+
+export const metadata: Metadata = {
+  title: 'Transações | Invest BR',
+}
 
 const typeLabels: Record<string, string> = {
   BUY: 'Compra',
@@ -24,67 +29,80 @@ const typeColors: Record<string, string> = {
 }
 
 async function TransactionsContent() {
-  const session = await auth()
-  const userId = session?.user?.id
+  try {
+    const session = await auth()
+    const userId = session?.user?.id
 
-  const portfolio = await prisma.portfolio.findFirst({
-    where: userId ? { userId } : undefined,
-    include: { accounts: true },
-  })
+    const portfolio = await prisma.portfolio.findFirst({
+      where: userId ? { userId } : undefined,
+      include: { accounts: true },
+    })
 
-  if (!portfolio) {
+    if (!portfolio) {
+      return (
+        <TransactionsPageClient
+          transactions={[]}
+          assets={[]}
+          typeLabels={typeLabels}
+          typeColors={typeColors}
+        />
+      )
+    }
+
+    const accountIds = portfolio.accounts.map((account) => account.id)
+
+    const transactions = await prisma.transaction.findMany({
+      where: {
+        accountId: { in: accountIds },
+        deletedAt: null,
+      },
+      include: {
+        asset: { select: { id: true, ticker: true, name: true } },
+        account: { select: { name: true } },
+      },
+      orderBy: { date: 'desc' },
+      take: 500,
+    })
+
+    const uniqueAssets = Array.from(
+      new Map(
+        transactions
+          .filter((transaction) => transaction.asset)
+          .map((transaction) => [transaction.asset!.id, transaction.asset!])
+      ).values()
+    )
+
+    const serializedTransactions = transactions.map((transaction) => ({
+      id: transaction.id,
+      type: transaction.type,
+      date: transaction.date.toISOString(),
+      quantity: transaction.quantity ? transaction.quantity.toString() : null,
+      price: transaction.price ? transaction.price.toString() : null,
+      totalAmount: transaction.totalAmount.toString(),
+      notes: transaction.notes,
+      referenceId: transaction.referenceId,
+      asset: transaction.asset,
+      account: transaction.account,
+    }))
+
     return (
-      <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">
-        Nenhum portfólio encontrado.
-      </div>
+      <TransactionsPageClient
+        transactions={serializedTransactions}
+        assets={uniqueAssets}
+        typeLabels={typeLabels}
+        typeColors={typeColors}
+      />
+    )
+  } catch {
+    return (
+      <TransactionsPageClient
+        transactions={[]}
+        assets={[]}
+        typeLabels={typeLabels}
+        typeColors={typeColors}
+      />
     )
   }
-
-  const accountIds = portfolio.accounts.map((a) => a.id)
-
-  // Buscar 500 transações para filtro client-side (excluir soft-deleted)
-  const transactions = await prisma.transaction.findMany({
-    where: { 
-      accountId: { in: accountIds },
-      deletedAt: null,
-    },
-    include: {
-      asset: { select: { id: true, ticker: true, name: true } },
-      account: { select: { name: true } },
-    },
-    orderBy: { date: 'desc' },
-    take: 500,
-  })
-
-  // Extrair ativos únicos
-  const uniqueAssets = Array.from(
-    new Map(
-      transactions
-        .filter((tx) => tx.asset)
-        .map((tx) => [tx.asset!.id, tx.asset!])
-    ).values()
-  )
-
-  // Serializar Decimal → string (DEC-016)
-  const serializedTransactions = transactions.map((tx) => ({
-    id: tx.id,
-    type: tx.type,
-    date: tx.date.toISOString(),
-    quantity: tx.quantity ? tx.quantity.toString() : null,
-    price: tx.price ? tx.price.toString() : null,
-    totalAmount: tx.totalAmount.toString(),
-    asset: tx.asset,
-    account: tx.account,
-  }))
-
-  return (
-    <TransactionsPageClient
-      transactions={serializedTransactions}
-      assets={uniqueAssets}
-      typeLabels={typeLabels}
-      typeColors={typeColors}
-    />
-  )
 }
 
 function TransactionsSkeleton() {

@@ -90,6 +90,20 @@ export default function PositionCard({ position }: { position: SerializedPositio
             </div>
           </>
         )}
+
+        {!hasQuote ? (
+          <>
+            <div className="flex items-center justify-between">
+              <span>Valor atual (fallback)</span>
+              <span className="font-semibold text-gray-900">{formatCurrency(totalCost)}</span>
+            </div>
+            <div className="pt-1">
+              <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
+                Cotação indisponível
+              </span>
+            </div>
+          </>
+        ) : null}
       </div>
     </div>
   )

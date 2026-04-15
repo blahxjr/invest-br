@@ -85,6 +85,18 @@ describe('IncomePageClient', () => {
     expect(dividendTypes.length).toBeGreaterThan(0)
   })
 
+  it('renders empty state when no income events', () => {
+    render(
+      <IncomePageClient 
+        incomeEvents={[]} 
+        typeLabels={mockTypeLabels} 
+      />
+    )
+
+    expect(screen.getByText('Nenhum provento registrado')).toBeInTheDocument()
+    expect(screen.getByText('Adicionar provento')).toBeInTheDocument()
+  })
+
   it('renders action buttons for each income event', () => {
     const { container } = render(
       <IncomePageClient 

@@ -1,17 +1,38 @@
 import { Suspense } from 'react'
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { TrendingUp, Wallet, DollarSign, BarChart3 } from 'lucide-react'
 import PositionCard from '@/components/PositionCard'
 import IncomeCard from '@/components/IncomeCard'
+import { EmptyState } from '@/components/ui/EmptyState'
 import DashboardClient from './dashboard-client'
 import { getDashboardData } from './data'
+
+export const metadata: Metadata = {
+  title: 'Dashboard | Invest BR',
+}
 
 function formatCurrency(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
 async function DashboardContent() {
-  const data = await getDashboardData()
+  let data
+  try {
+    data = await getDashboardData()
+  } catch {
+    data = {
+      totalPortfolioCost: { toString: () => '0' },
+      totalCurrentValue: { toString: () => '0' },
+      assetCount: 0,
+      totalQuantity: { toString: () => '0' },
+      totalIncomeMonth: { toString: () => '0' },
+      top5Positions: [],
+      allocationByCategory: [],
+      recentIncome: [],
+      alertsSummary: { total: 0, critical: 0, warning: 0, info: 0 },
+    }
+  }
 
   // Serializa Decimal → number para KPIs
   const totalCost = parseFloat(data.totalPortfolioCost.toString())
@@ -58,36 +79,35 @@ async function DashboardContent() {
 
   return (
     <>
-      {/* KPI Cards + Gráfico de Alocação */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-8">
-        <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {stats.map(({ label, value, icon: Icon, color, bg }) => (
-            <div key={label} className="bg-white rounded-xl border border-gray-200 p-5">
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-sm text-gray-500">{label}</p>
-                <div className={`${bg} p-2 rounded-lg`}>
-                  <Icon size={18} className={color} />
-                </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        {stats.map(({ label, value, icon: Icon, color, bg }) => (
+          <div key={label} className="bg-white rounded-xl border border-gray-200 p-5">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm text-gray-500">{label}</p>
+              <div className={`${bg} p-2 rounded-lg`}>
+                <Icon size={18} className={color} />
               </div>
-              <p className="text-2xl font-bold text-gray-900">{value}</p>
             </div>
-          ))}
-        </div>
-
-        {/* Gráfico de alocação — ocupa 2 colunas do grid de 5 */}
-        <div className="lg:col-span-2">
-          <DashboardClient items={allocationForClient} />
-        </div>
+            <p className="text-2xl font-bold text-gray-900">{value}</p>
+          </div>
+        ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="col-span-full lg:col-span-2">
+          <DashboardClient items={allocationForClient} />
+        </div>
+
         {/* Top 5 posições */}
         <div className="lg:col-span-2">
           <h2 className="text-base font-semibold text-gray-900 mb-3">Top 5 Posições</h2>
           {data.top5Positions.length === 0 ? (
-            <div className="bg-white rounded-xl border border-gray-200 p-10 text-center text-gray-500">
-              Nenhuma posição encontrada. Execute o seed para popular o banco.
-            </div>
+            <EmptyState
+              icon="📊"
+              title="Sua carteira está vazia"
+              description="Importe um extrato da B3 ou adicione transações manualmente."
+              action={{ label: 'Importar da B3', href: '/import' }}
+            />
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {data.top5Positions.map((pos) => (
@@ -111,7 +131,7 @@ async function DashboardContent() {
         </div>
 
         {/* Rendimentos recentes */}
-        <div>
+        <div className="col-span-full lg:col-span-1">
           <h2 className="text-base font-semibold text-gray-900 mb-3">Últimos Rendimentos</h2>
           {data.recentIncome.length === 0 ? (
             <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-500 text-sm">
@@ -132,7 +152,7 @@ async function DashboardContent() {
             </div>
           )}
 
-          <div className="mt-6 bg-white rounded-xl border border-gray-200 p-5">
+          <div className="col-span-full mt-6 bg-white rounded-xl border border-gray-200 p-5">
             <h2 className="text-base font-semibold text-gray-900 mb-3">Alertas</h2>
             <div className="space-y-2 text-sm">
               <p className="text-gray-700">
@@ -189,7 +209,7 @@ export default function DashboardPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Dashboard</h1>
         <p className="text-sm text-gray-500 mt-1">Visão geral da sua carteira de investimentos</p>
       </div>
       <Suspense fallback={<DashboardSkeleton />}>

@@ -110,10 +110,8 @@ describe('TransactionsPageClient', () => {
       />
     )
 
-    // When empty, should not have transaction data
-    const petr4s = screen.queryAllByText('PETR4')
-    // PETR4 might still appear in filter select, but not in table body
-    expect(petr4s.length).toBeLessThan(2)
+    expect(screen.getByText('Nenhuma transação encontrada')).toBeInTheDocument()
+    expect(screen.getByText('Limpar filtros')).toBeInTheDocument()
   })
 
   it('renders action buttons for each transaction', () => {

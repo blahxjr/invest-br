@@ -53,7 +53,7 @@ export default async function ConfigPage() {
           <ArrowLeft size={18} className="text-gray-600" />
           <span className="text-sm text-gray-600">Voltar</span>
         </Link>
-        <h1 className="text-3xl font-bold text-gray-900">Configurar Alocação Alvo</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Configurar Alocação Alvo</h1>
       </div>
 
       {/* Informação */}

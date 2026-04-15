@@ -48,9 +48,11 @@ describe('PositionCard', () => {
     expect(pnl.closest('div')?.className).toMatch(/green/)
   })
 
-  it('omite seção de P&L quando currentPrice é null', () => {
+  it('omite seção de P&L e exibe fallback quando currentPrice é null', () => {
     render(<PositionCard {...baseProps} currentPrice={null} />)
     expect(screen.queryByText(/Var\. dia/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/Valor atual/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^Valor atual$/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/Cotação indisponível/i)).toBeInTheDocument()
+    expect(screen.getByText(/fallback de custo/i)).toBeInTheDocument()
   })
 })

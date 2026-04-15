@@ -5,7 +5,8 @@
 'use client'
 
 import { useMemo } from 'react'
-import { AlertCircle, CheckCircle, AlertTriangle, TrendingUp, TrendingDown } from 'lucide-react'
+import { AlertCircle, CheckCircle, AlertTriangle } from 'lucide-react'
+import { EmptyState } from '@/components/ui/EmptyState'
 import type { RebalanceResult, Alert } from '@/modules/insights/rebalance-types'
 
 type Props = {
@@ -22,7 +23,25 @@ export default function RebalancePageClient({ rebalanceResult, alerts }: Props) 
     }
   }, [alerts])
 
-  const hasAlertTargets = rebalanceResult.allocations.some((a) => a.targetPct !== null)
+  const hasTargets = rebalanceResult.allocations.some((allocation) => allocation.targetPct !== null)
+  const hasPositions = rebalanceResult.totalPortfolioValue.gt(0)
+
+  const outOfTargetCount = rebalanceResult.allocations.filter((allocation) => allocation.status && allocation.status !== 'OK').length
+
+  if (!hasPositions) {
+    return (
+      <div className="space-y-6">
+        <EmptyState
+          icon="📈"
+          title="Sem ativos para analisar"
+          description="Adicione transações para ver sua análise de rebalanceamento."
+        />
+        <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600 italic">
+          ⚠️ Esta é uma análise automatizada, não uma recomendação de investimento.
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -51,12 +70,21 @@ export default function RebalancePageClient({ rebalanceResult, alerts }: Props) 
             ) : (
               <>
                 <AlertTriangle size={20} className="text-yellow-600" />
-                <span className="text-yellow-600">Fora do Alvo</span>
+                <span className="text-yellow-600">{outOfTargetCount} classes fora do alvo</span>
               </>
             )}
           </div>
         </div>
       </div>
+
+      {!hasTargets ? (
+        <EmptyState
+          icon="🎯"
+          title="Configure sua alocação alvo"
+          description="Defina o percentual ideal por classe de ativo para receber sugestões de rebalanceamento."
+          action={{ label: 'Configurar agora', href: '/insights/rebalance/config' }}
+        />
+      ) : null}
 
       {/* Seção B: Tabela de alocação */}
       {rebalanceResult.allocations.length > 0 && (
@@ -64,19 +92,19 @@ export default function RebalancePageClient({ rebalanceResult, alerts }: Props) 
           <div className="p-6 border-b border-gray-200">
             <h2 className="text-lg font-semibold text-gray-900">Alocação por Classe</h2>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto w-full">
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600">Classe</th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600">Valor Atual</th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600">% Atual</th>
-                  {hasAlertTargets && (
+                  <th className="px-2 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600">Classe</th>
+                  <th className="px-2 sm:px-6 py-3 text-right text-xs font-semibold text-gray-600">Valor Atual</th>
+                  <th className="px-2 sm:px-6 py-3 text-right text-xs font-semibold text-gray-600">% Atual</th>
+                  {hasTargets && (
                     <>
-                      <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600">% Alvo</th>
-                      <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600">Desvio</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600">Status</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600">Sugestão</th>
+                      <th className="px-2 sm:px-6 py-3 text-right text-xs font-semibold text-gray-600" title="Percentual configurado em Configurar alocação alvo">Alvo %</th>
+                      <th className="px-2 sm:px-6 py-3 text-right text-xs font-semibold text-gray-600" title="Diferença entre alocação atual e alvo. Status OK se dentro de ±5pp">Desvio</th>
+                      <th className="px-2 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600">Status</th>
+                      <th className="px-2 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600">Sugestão</th>
                     </>
                   )}
                 </tr>
@@ -84,47 +112,61 @@ export default function RebalancePageClient({ rebalanceResult, alerts }: Props) 
               <tbody className="divide-y divide-gray-200">
                 {rebalanceResult.allocations.map((alloc) => (
                   <tr key={alloc.assetClass} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 text-sm font-medium text-gray-900">{alloc.label}</td>
-                    <td className="px-6 py-4 text-sm text-right text-gray-900">
+                    <td className="px-2 sm:px-6 py-4 text-sm font-medium text-gray-900">{alloc.label}</td>
+                    <td className="px-2 sm:px-6 py-4 text-sm text-right text-gray-900">
                       R$ {parseFloat(alloc.currentValue.toString()).toLocaleString('pt-BR', {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
                       })}
                     </td>
-                    <td className="px-6 py-4 text-sm text-right text-gray-900">
+                    <td className="px-2 sm:px-6 py-4 text-sm text-right text-gray-900">
                       {alloc.currentPct.toFixed(1)}%
                     </td>
-                    {hasAlertTargets && (
+                    {hasTargets && (
                       <>
-                        <td className="px-6 py-4 text-sm text-right text-gray-900">
+                        <td className="px-2 sm:px-6 py-4 text-sm text-right text-gray-900">
                           {alloc.targetPct !== null ? `${alloc.targetPct.toFixed(1)}%` : '—'}
                         </td>
-                        <td className="px-6 py-4 text-sm text-right text-gray-900">
-                          {alloc.deviationPct !== null
-                            ? `${alloc.deviationPct.toFixed(1)}pp`
-                            : '—'}
+                        <td className="px-2 sm:px-6 py-4 text-sm text-right">
+                          {alloc.deviationPct !== null ? (
+                            alloc.deviationPct.gt(0) ? (
+                              <span className="font-semibold text-red-600">▲ {alloc.deviationPct.toFixed(1)}pp</span>
+                            ) : alloc.deviationPct.lt(0) ? (
+                              <span className="font-semibold text-amber-600">▼ {alloc.deviationPct.abs().toFixed(1)}pp</span>
+                            ) : (
+                              <span className="font-semibold text-green-600">✓ 0.0pp</span>
+                            )
+                          ) : '—'}
                         </td>
-                        <td className="px-6 py-4 text-sm">
+                        <td className="px-2 sm:px-6 py-4 text-sm" title="Critério: status OK quando desvio está dentro de ±5pp.">
                           {alloc.status === 'OK' && (
                             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-green-100 text-green-700 text-xs font-medium">
-                              <CheckCircle size={14} /> OK
+                              ✅ Balanceado
                             </span>
                           )}
                           {alloc.status === 'ACIMA' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">
-                              <TrendingUp size={14} /> Acima
+                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                              alloc.deviationPct && alloc.deviationPct.abs().gt(15)
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-amber-100 text-amber-700'
+                            }`}>
+                              ⬆️ Acima
                             </span>
                           )}
                           {alloc.status === 'ABAIXO' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-100 text-amber-700 text-xs font-medium">
-                              <TrendingDown size={14} /> Abaixo
+                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                              alloc.deviationPct && alloc.deviationPct.abs().gt(15)
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-amber-100 text-amber-700'
+                            }`}>
+                              ⬇️ Abaixo
                             </span>
                           )}
                           {alloc.status === null && <span className="text-gray-500">—</span>}
                         </td>
-                        <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                        <td className="px-2 sm:px-6 py-4 text-sm text-gray-900">
                           {alloc.suggestionValue !== null ? (
-                            <span className={alloc.suggestionValue.gt(0) ? 'text-green-600' : 'text-red-600'}>
+                            <span className={`font-semibold ${alloc.suggestionValue.gt(0) ? 'text-green-600' : 'text-red-600'}`}>
                               {alloc.suggestionLabel}
                             </span>
                           ) : (
@@ -153,24 +195,41 @@ export default function RebalancePageClient({ rebalanceResult, alerts }: Props) 
           <div className="divide-y divide-gray-200">
             {alertsBySeverity.critical.map((alert) => (
               <div key={alert.id} className="p-4 bg-red-50 border-l-4 border-red-500">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="text-red-600 flex-shrink-0 mt-0.5" size={18} />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-red-900">{alert.title}</p>
-                    <p className="text-sm text-red-800 mt-1 whitespace-pre-wrap">{alert.description}</p>
-                  </div>
-                </div>
+                <details>
+                  <summary className="cursor-pointer list-none">
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="text-red-600 flex-shrink-0 mt-0.5" size={18} />
+                      <p className="font-semibold text-red-900">{alert.title}</p>
+                    </div>
+                  </summary>
+                  <p className="pl-7 text-sm text-red-800 mt-2 whitespace-pre-wrap">{alert.description}</p>
+                </details>
               </div>
             ))}
             {alertsBySeverity.warning.map((alert) => (
               <div key={alert.id} className="p-4 bg-yellow-50 border-l-4 border-yellow-500">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className="text-yellow-600 flex-shrink-0 mt-0.5" size={18} />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-yellow-900">{alert.title}</p>
-                    <p className="text-sm text-yellow-800 mt-1 whitespace-pre-wrap">{alert.description}</p>
-                  </div>
-                </div>
+                <details>
+                  <summary className="cursor-pointer list-none">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="text-yellow-600 flex-shrink-0 mt-0.5" size={18} />
+                      <p className="font-semibold text-yellow-900">{alert.title}</p>
+                    </div>
+                  </summary>
+                  <p className="pl-7 text-sm text-yellow-800 mt-2 whitespace-pre-wrap">{alert.description}</p>
+                </details>
+              </div>
+            ))}
+            {alertsBySeverity.info.map((alert) => (
+              <div key={alert.id} className="p-4 bg-blue-50 border-l-4 border-blue-500">
+                <details>
+                  <summary className="cursor-pointer list-none">
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="text-blue-600 flex-shrink-0 mt-0.5" size={18} />
+                      <p className="font-semibold text-blue-900">{alert.title}</p>
+                    </div>
+                  </summary>
+                  <p className="pl-7 text-sm text-blue-800 mt-2 whitespace-pre-wrap">{alert.description}</p>
+                </details>
               </div>
             ))}
           </div>
