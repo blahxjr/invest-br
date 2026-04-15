@@ -87,10 +87,14 @@ export async function createTransaction(input: TransactionCreateInput): Promise<
 
 /**
  * Retorna todas as transações de uma conta, ordenadas por data descendente.
+ * Exclui transações soft-deleted (deletedAt IS NOT NULL).
  */
 export async function getTransactionsByAccount(accountId: string) {
   return prisma.transaction.findMany({
-    where: { accountId },
+    where: { 
+      accountId,
+      deletedAt: null,
+    },
     include: {
       asset: true,
       ledgerEntries: true,

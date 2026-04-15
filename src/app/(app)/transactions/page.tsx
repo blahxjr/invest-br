@@ -42,9 +42,12 @@ async function TransactionsContent() {
 
   const accountIds = portfolio.accounts.map((a) => a.id)
 
-  // Buscar 500 transações para filtro client-side
+  // Buscar 500 transações para filtro client-side (excluir soft-deleted)
   const transactions = await prisma.transaction.findMany({
-    where: { accountId: { in: accountIds } },
+    where: { 
+      accountId: { in: accountIds },
+      deletedAt: null,
+    },
     include: {
       asset: { select: { id: true, ticker: true, name: true } },
       account: { select: { name: true } },

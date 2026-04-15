@@ -97,6 +97,7 @@ export async function getPositions(userId: string): Promise<Position[]> {
       type: { in: ['BUY', 'SELL'] },
       account: { client: { userId } },
       assetId: { not: null },
+      deletedAt: null,
     },
     select: {
       type: true,

@@ -95,7 +95,7 @@ export async function getInsightsForClient(
 
   const accountIds = accounts.map((a) => a.id)
 
-  // 4. Buscar todas as transações até a data especificada
+  // 4. Buscar todas as transações até a data especificada (excluir soft-deleted)
   const transactions = await prisma.transaction.findMany({
     where: {
       accountId: {
@@ -104,6 +104,7 @@ export async function getInsightsForClient(
       date: {
         lte: calcDate,
       },
+      deletedAt: null,
     },
     include: {
       asset: {

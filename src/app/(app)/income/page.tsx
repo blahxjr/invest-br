@@ -48,7 +48,10 @@ async function IncomeContent() {
   const accountIds = portfolio.accounts.map((a) => a.id)
 
   const incomeEvents = await prisma.incomeEvent.findMany({
-    where: { accountId: { in: accountIds } },
+    where: { 
+      accountId: { in: accountIds },
+      deletedAt: null,
+    },
     include: {
       asset: { select: { ticker: true } },
       account: { select: { name: true } },

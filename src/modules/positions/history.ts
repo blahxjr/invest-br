@@ -122,6 +122,7 @@ export async function calcPatrimonyHistory(
       type: { in: ['BUY', 'SELL'] },
       account: { client: { userId } },
       assetId: { not: null },
+      deletedAt: null,
     },
     select: {
       type: true,

@@ -269,6 +269,7 @@ model Transaction {
   ledgerEntries LedgerEntry[]
   incomeEvents  IncomeEvent[]
   createdAt    DateTime        @default(now())
+  deletedAt    DateTime?       // soft delete
 }
 
 model LedgerEntry {
@@ -308,6 +309,7 @@ model IncomeEvent {
   paymentDate   DateTime
   notes         String?
   createdAt     DateTime    @default(now())
+  deletedAt     DateTime?       // soft delete
 }
 
 model RentalReceipt {
@@ -320,4 +322,20 @@ model RentalReceipt {
   netRent      Decimal  @db.Decimal(18, 2)
   paymentDate  DateTime
   createdAt    DateTime @default(now())
+}
+
+// ─── Auditoria ──────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id            String      @id @default(cuid())
+  entityType    String      // 'TRANSACTION', 'INCOME', 'ASSET'
+  entityId      String      // ID da entidade auditada (Transaction.id ou IncomeEvent.id)
+  action        String      // 'CREATE', 'UPDATE', 'DELETE'
+  previousValue String?     // JSON serializado (null para CREATE)
+  newValue      String?     // JSON serializado (null para DELETE)
+  changedBy     String?     // userId
+  changedAt     DateTime    @default(now())
+
+  @@index([entityType, entityId])
+  @@index([changedAt])
 }

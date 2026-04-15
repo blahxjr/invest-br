@@ -25,7 +25,10 @@ export async function createIncomeEvent(input: IncomeEventCreateInput) {
 
 export async function getIncomeEventsByAccount(accountId: string) {
   return prisma.incomeEvent.findMany({
-    where: { accountId },
+    where: { 
+      accountId,
+      deletedAt: null,
+    },
     include: { asset: true },
     orderBy: { paymentDate: 'desc' },
   })
@@ -33,7 +36,10 @@ export async function getIncomeEventsByAccount(accountId: string) {
 
 export async function getTotalIncomeByAccount(accountId: string): Promise<Decimal> {
   const events = await prisma.incomeEvent.findMany({
-    where: { accountId },
+    where: { 
+      accountId,
+      deletedAt: null,
+    },
     select: { netAmount: true },
   })
   return events.reduce((sum, e) => sum.plus(e.netAmount), new Prisma.Decimal(0))
@@ -87,6 +93,7 @@ export async function calculatePositionByAsset(
       accountId,
       assetId,
       type: { in: ['BUY', 'SELL'] },
+      deletedAt: null,
     },
     orderBy: { date: 'asc' },
     select: { type: true, quantity: true, price: true, totalAmount: true },
@@ -133,9 +140,14 @@ export async function calculatePositionByAsset(
  * Retorna todas as posições abertas (qty > 0) de uma conta.
  */
 export async function getPositionsByAccount(accountId: string): Promise<AssetPosition[]> {
-  // Agrega assetIds únicos com BUY/SELL nesta conta
+  // Agrega assetIds únicos com BUY/SELL nesta conta (excluir soft-deleted)
   const assetIds = await prisma.transaction.findMany({
-    where: { accountId, type: { in: ['BUY', 'SELL'] }, assetId: { not: null } },
+    where: { 
+      accountId, 
+      type: { in: ['BUY', 'SELL'] }, 
+      assetId: { not: null },
+      deletedAt: null,
+    },
     select: { assetId: true },
     distinct: ['assetId'],
   })
