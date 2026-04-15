@@ -4,6 +4,7 @@ import { getPositions, summarizePositions } from '@/modules/positions/service'
 import { getQuotes } from '@/lib/quotes'
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
+import { generateAlerts } from '@/modules/insights/alerts-service'
 import type { Position, PositionWithQuote } from '@/modules/positions/types'
 import { enrichWithQuotes } from '@/modules/positions/types'
 import type { AllocationItem } from '@/modules/positions/types'
@@ -26,6 +27,12 @@ export interface DashboardData {
   top5Positions: PositionWithQuote[]
   allocationByCategory: AllocationItem[]
   recentIncome: DashboardRecentIncome[]
+  alertsSummary: {
+    total: number
+    critical: number
+    warning: number
+    info: number
+  }
 }
 
 function toNumber(d: { toString(): string } | null | undefined): number {
@@ -117,6 +124,14 @@ export async function getDashboardData(): Promise<DashboardData> {
     paymentDate: e.paymentDate,
   }))
 
+  const alerts = await generateAlerts(userId)
+  const alertsSummary = {
+    total: alerts.length,
+    critical: alerts.filter((alert) => alert.severity === 'CRITICAL').length,
+    warning: alerts.filter((alert) => alert.severity === 'WARNING').length,
+    info: alerts.filter((alert) => alert.severity === 'INFO').length,
+  }
+
   return {
     totalPortfolioCost: summary.totalCost,
     totalCurrentValue: enriched.reduce(
@@ -132,5 +147,6 @@ export async function getDashboardData(): Promise<DashboardData> {
     top5Positions: top5,
     allocationByCategory,
     recentIncome,
+    alertsSummary,
   }
 }

@@ -38,6 +38,7 @@ model User {
   insightConfigProfilesOwned InsightConfigProfile[] @relation("InsightProfileOwner")
   sessions      Session[]
   accounts      AuthAccount[]
+  allocationTargets AllocationTarget[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -239,6 +240,21 @@ model InsightConfigRule {
 
   @@unique([profileId, insightTypeId])
   @@index([insightTypeId])
+}
+
+// ─── Rebalanceamento e alocação ──────────────────────────────────────────────
+
+model AllocationTarget {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assetClass String  // 'RENDA_FIXA' | 'ACOES' | 'FIIS' | 'CRYPTO' | 'EXTERIOR' | 'OUTROS'
+  targetPct Decimal  @db.Decimal(6, 2) // 0.00 a 100.00 (soma deve ser 100)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, assetClass])
+  @@index([userId])
 }
 
 // ─── Ledger ──────────────────────────────────────────────────────────────────

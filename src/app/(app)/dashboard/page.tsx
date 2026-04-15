@@ -1,4 +1,5 @@
 import { Suspense } from 'react'
+import Link from 'next/link'
 import { TrendingUp, Wallet, DollarSign, BarChart3 } from 'lucide-react'
 import PositionCard from '@/components/PositionCard'
 import IncomeCard from '@/components/IncomeCard'
@@ -130,6 +131,30 @@ async function DashboardContent() {
               ))}
             </div>
           )}
+
+          <div className="mt-6 bg-white rounded-xl border border-gray-200 p-5">
+            <h2 className="text-base font-semibold text-gray-900 mb-3">Alertas</h2>
+            <div className="space-y-2 text-sm">
+              <p className="text-gray-700">
+                Total: <span className="font-semibold">{data.alertsSummary.total}</span>
+              </p>
+              <p className="text-red-700">
+                Críticos: <span className="font-semibold">{data.alertsSummary.critical}</span>
+              </p>
+              <p className="text-amber-700">
+                Avisos: <span className="font-semibold">{data.alertsSummary.warning}</span>
+              </p>
+              <p className="text-blue-700">
+                Informativos: <span className="font-semibold">{data.alertsSummary.info}</span>
+              </p>
+            </div>
+            <Link
+              href="/insights/rebalance"
+              className="inline-block mt-4 text-sm text-blue-600 hover:text-blue-700 font-medium"
+            >
+              Ver análise completa →
+            </Link>
+          </div>
         </div>
       </div>
     </>
