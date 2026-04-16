@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { prisma } from '@/lib/prisma'
 import * as positionsService from '@/modules/positions/service'
 import { createTransaction } from '@/modules/transactions/service'
-import { inferAssetClass, type InferredAssetClass, type MovimentacaoRow, type NegociacaoRow, type PosicaoRow } from './parser'
+import { inferAssetClass, type InferredAssetClass, type MovimentacaoReviewRow, type MovimentacaoRow, type NegociacaoRow, type PosicaoRow } from './parser'
 
 export type ImportResult = {
   imported?: number
@@ -90,12 +90,90 @@ export type ConfirmImportResult = {
   transactionsSkipped: number
 }
 
+export type ReviewRowAction = 'IMPORT' | 'SKIP'
+
+export type MovimentacaoReviewLine = {
+  id: string
+  lineNumber: number
+  source: 'READY' | 'REVISAR'
+  reviewReason?: string
+  action: ReviewRowAction
+  referenceId: string
+  date: Date
+  type: 'BUY' | 'DIVIDEND'
+  ticker: string
+  instituicao: string
+  quantity: number
+  price: number | null
+  total: number | null
+  issues: string[]
+}
+
+export type AnalyzeMovimentacaoResult = {
+  lines: MovimentacaoReviewLine[]
+  summary: {
+    totalRows: number
+    importableRows: number
+    reviewRows: number
+  }
+}
+
+export type ConfirmMovimentacaoResult = {
+  imported: number
+  skipped: number
+  reviewed: number
+  errors: string[]
+}
+
+export type PosicaoReviewLine = {
+  id: string
+  lineNumber: number
+  action: ReviewRowAction
+  ticker: string
+  name: string
+  category: PosicaoRow['category']
+  quantity: number
+  closePrice: number
+  updatedValue: number
+  instituicao: string
+  conta: string
+  issues: string[]
+}
+
+export type AnalyzePosicaoResult = {
+  lines: PosicaoReviewLine[]
+  summary: {
+    totalRows: number
+    importableRows: number
+    reviewRows: number
+  }
+}
+
+export type ConfirmPosicaoResult = {
+  upserted: number
+  skipped: number
+  reviewed: number
+  errors: string[]
+}
+
 export type InstitutionPreview = {
   normalizedName: string
   displayName: string
   inferredType: 'Corretora' | 'Banco' | 'Exchange' | 'Outra'
   isNew: boolean
+  accountName: string
+  accountStatus: 'NOVA' | 'JÁ EXISTE'
+  isAccountNew: boolean
   rowCount: number
+}
+
+type ImportAccountResolution = {
+  institutionName: string
+  institutionId: string
+  accountId: string
+  accountName: string
+  institutionCreated: boolean
+  accountCreated: boolean
 }
 
 type DbCategory = AssetCategory
@@ -253,6 +331,53 @@ function buildNegociacaoIdempotencyKey(row: ParsedRow): string {
   return `b3-negociacao-${digest}`
 }
 
+function buildMovimentacaoIdempotencyKey(row: {
+  date: Date
+  type: 'BUY' | 'DIVIDEND'
+  ticker: string
+  instituicao: string
+  quantity: number
+  total: number | null
+}): string {
+  const raw = [
+    row.ticker,
+    normalizeDate(row.date),
+    row.type,
+    row.quantity.toString(),
+    (row.total ?? 0).toString(),
+    row.instituicao,
+  ].join('|')
+
+  const digest = createHash('sha256').update(raw).digest('hex')
+  return `b3-movimentacao-${digest}`
+}
+
+function validateMovimentacaoLine(line: {
+  ticker: string
+  instituicao: string
+  quantity: number
+  total: number | null
+}): string[] {
+  const issues: string[] = []
+  if (!line.ticker.trim()) issues.push('ticker_ausente')
+  if (!line.instituicao.trim()) issues.push('instituicao_ausente')
+  if (line.quantity <= 0) issues.push('quantidade_invalida')
+  if ((line.total ?? 0) <= 0) issues.push('valor_total_invalido')
+  return issues
+}
+
+function validatePosicaoLine(line: {
+  ticker: string
+  name: string
+  instituicao: string
+}): string[] {
+  const issues: string[] = []
+  if (!line.ticker.trim()) issues.push('ticker_ausente')
+  if (!line.name.trim()) issues.push('nome_ausente')
+  if (!line.instituicao.trim()) issues.push('instituicao_ausente')
+  return issues
+}
+
 function ensureDate(value: Date | string): Date {
   if (value instanceof Date) return value
   return new Date(value)
@@ -274,37 +399,33 @@ async function getAssetClassIdByCategory(category: PosicaoRow['category']): Prom
 }
 
 /**
- * Busca a conta padrao do usuario para vincular importacoes em lote.
- */
-export async function getDefaultAccountForUser(userId: string): Promise<string> {
-  const account = await prisma.account.findFirst({
-    where: { portfolio: { userId } },
-    orderBy: { createdAt: 'asc' },
-    select: { id: true },
-  })
-
-  if (!account) {
-    throw new Error('Nenhuma conta encontrada para o usuario autenticado')
-  }
-
-  return account.id
-}
-
-/**
  * Busca o cliente padrão do usuário para vincular contas criadas via importação.
  */
-export async function getClientForUser(userId: string): Promise<string> {
+export async function getOrCreateClientForUser(userId: string): Promise<string> {
   const client = await prisma.client.findFirst({
     where: { userId },
     orderBy: { createdAt: 'asc' },
     select: { id: true },
   })
 
-  if (!client) {
-    throw new Error('Nenhum cliente encontrado para o usuário autenticado')
+  if (client) {
+    return client.id
   }
 
-  return client.id
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { name: true },
+  })
+
+  const created = await prisma.client.create({
+    data: {
+      userId,
+      name: user?.name?.trim() || 'Cliente Principal',
+    },
+    select: { id: true },
+  })
+
+  return created.id
 }
 
 /**
@@ -356,6 +477,42 @@ export async function upsertAccountForInstitution(
 }
 
 /**
+ * Resolve conta por instituição para importação, criando instituição/conta quando necessário.
+ */
+export async function resolveImportAccountForInstitution(
+  institutionName: string,
+  clientId: string,
+  tx: TxClient,
+): Promise<ImportAccountResolution> {
+  const normalizedName = normalizeInstitutionName(institutionName)
+
+  const existingInstitution = await tx.institution.findFirst({
+    where: { name: normalizedName },
+    select: { id: true },
+  })
+
+  const institutionId = await upsertInstitution(normalizedName, tx)
+
+  const existingAccount = await tx.account.findFirst({
+    where: { institutionId, clientId },
+    select: { id: true, name: true },
+  })
+
+  const accountId = await upsertAccountForInstitution(institutionId, normalizedName, clientId, tx)
+
+  const accountName = existingAccount?.name || buildAccountName(normalizedName)
+
+  return {
+    institutionName: normalizedName,
+    institutionId,
+    accountId,
+    accountName,
+    institutionCreated: !existingInstitution,
+    accountCreated: !existingAccount,
+  }
+}
+
+/**
  * Garante a existencia do ativo por ticker e retorna seu id.
  */
 export async function upsertAssetFromImport(
@@ -388,7 +545,7 @@ export async function upsertAssetFromImport(
 /**
  * Analisa as linhas de negociação e separa o que está pronto do que requer resolução manual.
  */
-export async function analyzeNegociacaoRows(rows: NegociacaoRow[]): Promise<AnalyzeNegociacaoResult> {
+export async function analyzeNegociacaoRows(rows: NegociacaoRow[], userId?: string): Promise<AnalyzeNegociacaoResult> {
   const parsedRows: ParsedRow[] = rows.map((row) => ({ ...row }))
   const tickers = Array.from(new Set(parsedRows.map((row) => row.ticker)))
   const institutionNames = Array.from(
@@ -400,7 +557,11 @@ export async function analyzeNegociacaoRows(rows: NegociacaoRow[]): Promise<Anal
     ),
   )
 
-  const [assetsByTicker, classes, allAssets, existingInstitutions] = await Promise.all([
+  const client = userId
+    ? await prisma.client.findFirst({ where: { userId }, orderBy: { createdAt: 'asc' }, select: { id: true } })
+    : null
+
+  const [assetsByTicker, classes, allAssets, existingInstitutions, existingAccounts] = await Promise.all([
     prisma.asset.findMany({
       where: { ticker: { in: tickers } },
       select: { id: true, ticker: true },
@@ -422,7 +583,16 @@ export async function analyzeNegociacaoRows(rows: NegociacaoRow[]): Promise<Anal
     institutionNames.length
       ? prisma.institution.findMany({
           where: { name: { in: institutionNames } },
-          select: { name: true, type: true },
+          select: { id: true, name: true, type: true },
+        })
+      : Promise.resolve([]),
+    client?.id
+      ? prisma.account.findMany({
+          where: {
+            clientId: client.id,
+            institution: { name: { in: institutionNames } },
+          },
+          select: { institutionId: true, name: true },
         })
       : Promise.resolve([]),
   ])
@@ -491,19 +661,23 @@ export async function analyzeNegociacaoRows(rows: NegociacaoRow[]): Promise<Anal
     institutionRowCount.set(normalized, (institutionRowCount.get(normalized) ?? 0) + 1)
   }
 
-  const existingInstitutionByName = new Map(
-    existingInstitutions.map((institution) => [institution.name, institution]),
-  )
+  const existingInstitutionByName = new Map(existingInstitutions.map((institution) => [institution.name, institution]))
+  const existingAccountByInstitutionId = new Map(existingAccounts.map((account) => [account.institutionId, account]))
 
   const institutionPreviews: InstitutionPreview[] = Array.from(institutionRowCount.entries()).map(
     ([normalizedName, rowCount]) => {
       const existing = existingInstitutionByName.get(normalizedName)
       const inferred = existing?.type ?? inferInstitutionType(normalizedName)
+      const account = existing ? existingAccountByInstitutionId.get(existing.id) : null
+      const accountName = account?.name || buildAccountName(normalizedName)
       return {
         normalizedName,
         displayName: buildAccountName(normalizedName),
         inferredType: institutionTypeToPtBr(inferred),
         isNew: !existing,
+        accountName,
+        accountStatus: account ? 'JÁ EXISTE' : 'NOVA',
+        isAccountNew: !account,
         rowCount,
       }
     },
@@ -545,7 +719,7 @@ export async function confirmAndImportNegociacaoForUser(
   userId: string,
   payload: ImportPayload,
 ): Promise<ConfirmImportResult> {
-  const clientId = await getClientForUser(userId)
+  const clientId = await getOrCreateClientForUser(userId)
   const normalizedReadyRows: ParsedRow[] = payload.readyRows.map((row) => ({
     ...row,
     date: ensureDate(row.date),
@@ -575,23 +749,12 @@ export async function confirmAndImportNegociacaoForUser(
     let accountsCreated = 0
 
     for (const instName of uniqueInstitutions) {
-      const existingInst = await tx.institution.findFirst({
-        where: { name: instName },
-        select: { id: true },
-      })
+      const resolution = await resolveImportAccountForInstitution(instName, clientId, tx)
 
-      const institutionId = await upsertInstitution(instName, tx)
-      if (!existingInst) institutionsCreated++
+      if (resolution.institutionCreated) institutionsCreated++
+      if (resolution.accountCreated) accountsCreated++
 
-      const existingAcc = await tx.account.findFirst({
-        where: { institutionId, clientId },
-        select: { id: true },
-      })
-
-      const accountId = await upsertAccountForInstitution(institutionId, instName, clientId, tx)
-      if (!existingAcc) accountsCreated++
-
-      accountByInstitution.set(instName, accountId)
+      accountByInstitution.set(instName, resolution.accountId)
     }
 
     for (const classInput of payload.classesToCreate) {
@@ -873,24 +1036,322 @@ export async function confirmAndImportNegociacaoForUser(
   }
 }
 
+function parsePtBrNumber(raw: string): number {
+  const value = raw.trim()
+  if (!value || value === '-') return 0
+  const normalized = value.includes(',') ? value.replace(/\./g, '').replace(',', '.') : value
+  const parsed = Number(normalized)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function parsePtBrDate(raw: string): Date {
+  const value = raw.trim()
+  const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (match) {
+    const [, day, month, year] = match
+    return new Date(`${year}-${month}-${day}T00:00:00.000Z`)
+  }
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed
+}
+
+function extractTickerFromProduto(raw: string): string {
+  const value = raw.trim().toUpperCase()
+  if (!value) return ''
+  const [first] = value.split(' - ')
+  return first?.trim() ?? ''
+}
+
+/**
+ * Analisa movimentações e prepara linhas para revisão antes da persistência.
+ */
+export async function analyzeMovimentacaoRows(
+  rows: MovimentacaoRow[],
+  parserReviewRows: MovimentacaoReviewRow[] = [],
+): Promise<AnalyzeMovimentacaoResult> {
+  const readyLines: MovimentacaoReviewLine[] = rows.map((row, index) => {
+    const issues = validateMovimentacaoLine(row)
+    return {
+      id: `mov-ready-${index + 1}`,
+      lineNumber: index + 1,
+      source: 'READY',
+      action: issues.length === 0 ? 'IMPORT' : 'SKIP',
+      referenceId: row.referenceId,
+      date: row.date,
+      type: row.type,
+      ticker: row.ticker,
+      instituicao: row.instituicao,
+      quantity: row.quantity,
+      price: row.price,
+      total: row.total,
+      issues,
+    }
+  })
+
+  const reviewLines: MovimentacaoReviewLine[] = parserReviewRows.map((row, index) => {
+    const type = row.raw.movimentacao.toLowerCase().includes('transfer') ? 'BUY' : 'DIVIDEND'
+    const normalizedLine = {
+      ticker: extractTickerFromProduto(row.raw.produto),
+      instituicao: (row.raw.instituicao ?? '').trim().toUpperCase(),
+      quantity: parsePtBrNumber(row.raw.quantidade),
+      total: parsePtBrNumber(row.raw.valorOperacao),
+    }
+
+    const issues = [`parser_${row.reason}`, ...validateMovimentacaoLine(normalizedLine)]
+
+    return {
+      id: `mov-review-${index + 1}`,
+      lineNumber: row.lineNumber,
+      source: 'REVISAR',
+      reviewReason: row.reason,
+      action: 'SKIP',
+      referenceId: `review-${row.lineNumber}-${index + 1}`,
+      date: parsePtBrDate(row.raw.data),
+      type,
+      ticker: normalizedLine.ticker,
+      instituicao: normalizedLine.instituicao,
+      quantity: normalizedLine.quantity,
+      price: parsePtBrNumber(row.raw.precoUnitario),
+      total: normalizedLine.total,
+      issues,
+    }
+  })
+
+  const lines = [...readyLines, ...reviewLines]
+
+  return {
+    lines,
+    summary: {
+      totalRows: lines.length,
+      importableRows: lines.filter((line) => line.action === 'IMPORT' && line.issues.length === 0).length,
+      reviewRows: lines.filter((line) => line.source === 'REVISAR' || line.issues.length > 0).length,
+    },
+  }
+}
+
+/**
+ * Confirma e persiste movimentações após revisão manual do usuário.
+ */
+export async function confirmAndImportMovimentacaoForUser(
+  userId: string,
+  lines: MovimentacaoReviewLine[],
+): Promise<ConfirmMovimentacaoResult> {
+  const clientId = await getOrCreateClientForUser(userId)
+  let imported = 0
+  let skipped = 0
+  const errors: string[] = []
+  const lineAudit: Array<Record<string, unknown>> = []
+  const affectedAccountIds = new Set<string>()
+
+  for (const line of lines) {
+    if (line.action === 'SKIP') {
+      skipped++
+      lineAudit.push({ id: line.id, action: 'SKIP', issues: line.issues, source: line.source })
+      continue
+    }
+
+    const issues = validateMovimentacaoLine(line)
+    if (issues.length > 0) {
+      skipped++
+      errors.push(`Movimentacao linha ${line.lineNumber}: ${issues.join(', ')}`)
+      lineAudit.push({ id: line.id, action: 'SKIP_INVALID', issues, source: line.source })
+      continue
+    }
+
+    try {
+      const resolution = await resolveImportAccountForInstitution(line.instituicao, clientId, prisma)
+      const category = inferCategoryFromTickerAndMarket(line.ticker)
+      const assetId = await upsertAssetFromImport(line.ticker, line.ticker, category)
+
+      const referenceId = line.referenceId?.trim()
+        ? line.referenceId
+        : buildMovimentacaoIdempotencyKey({
+            date: ensureDate(line.date),
+            type: line.type,
+            ticker: line.ticker,
+            instituicao: line.instituicao,
+            quantity: line.quantity,
+            total: line.total,
+          })
+
+      const tx = await createTransaction({
+        referenceId,
+        type: line.type,
+        accountId: resolution.accountId,
+        assetId,
+        quantity: line.quantity,
+        price: line.price ?? undefined,
+        totalAmount: line.total ?? 0,
+        date: ensureDate(line.date),
+        notes: `Importacao B3 - Movimentacao (${line.instituicao})`,
+      })
+
+      if (tx.idempotent) {
+        skipped++
+        lineAudit.push({ id: line.id, action: 'IDEMPOTENT_SKIP', referenceId })
+      } else {
+        imported++
+        affectedAccountIds.add(resolution.accountId)
+        lineAudit.push({ id: line.id, action: 'IMPORTED', referenceId, accountId: resolution.accountId })
+      }
+    } catch (error) {
+      skipped++
+      const message = error instanceof Error ? error.message : 'Erro desconhecido'
+      errors.push(`Movimentacao linha ${line.lineNumber}: ${message}`)
+      lineAudit.push({ id: line.id, action: 'ERROR', error: message })
+    }
+  }
+
+  await prisma.auditLog.create({
+    data: {
+      entityType: 'IMPORT_B3_MOVIMENTACAO',
+      entityId: 'batch-confirm',
+      action: 'CREATE',
+      previousValue: null,
+      newValue: JSON.stringify({ imported, skipped, reviewed: lines.length, errors, lines: lineAudit }),
+      changedBy: userId,
+      changedAt: new Date(),
+    },
+  })
+
+  for (const accountId of affectedAccountIds) {
+    await positionsService.recalcPositions(accountId)
+  }
+
+  return {
+    imported,
+    skipped,
+    reviewed: lines.length,
+    errors,
+  }
+}
+
+/**
+ * Analisa posições e prepara revisão antes da persistência.
+ */
+export async function analyzePosicaoRows(rows: PosicaoRow[]): Promise<AnalyzePosicaoResult> {
+  const lines: PosicaoReviewLine[] = rows.map((row, index) => {
+    const issues = validatePosicaoLine(row)
+    return {
+      id: `pos-${index + 1}`,
+      lineNumber: index + 1,
+      action: issues.length === 0 ? 'IMPORT' : 'SKIP',
+      ticker: row.ticker,
+      name: row.name,
+      category: row.category,
+      quantity: row.quantity,
+      closePrice: row.closePrice,
+      updatedValue: row.updatedValue,
+      instituicao: row.instituicao,
+      conta: row.conta,
+      issues,
+    }
+  })
+
+  return {
+    lines,
+    summary: {
+      totalRows: lines.length,
+      importableRows: lines.filter((line) => line.action === 'IMPORT' && line.issues.length === 0).length,
+      reviewRows: lines.filter((line) => line.issues.length > 0).length,
+    },
+  }
+}
+
+/**
+ * Confirma e persiste posições após revisão manual do usuário.
+ */
+export async function confirmAndImportPosicaoForUser(
+  userId: string,
+  lines: PosicaoReviewLine[],
+): Promise<ConfirmPosicaoResult> {
+  const clientId = await getOrCreateClientForUser(userId)
+  let upserted = 0
+  let skipped = 0
+  const errors: string[] = []
+  const lineAudit: Array<Record<string, unknown>> = []
+
+  for (const line of lines) {
+    if (line.action === 'SKIP') {
+      skipped++
+      lineAudit.push({ id: line.id, action: 'SKIP', issues: line.issues })
+      continue
+    }
+
+    const issues = validatePosicaoLine(line)
+    if (issues.length > 0) {
+      skipped++
+      errors.push(`Posicao linha ${line.lineNumber}: ${issues.join(', ')}`)
+      lineAudit.push({ id: line.id, action: 'SKIP_INVALID', issues })
+      continue
+    }
+
+    try {
+      await resolveImportAccountForInstitution(line.instituicao, clientId, prisma)
+      await upsertAssetFromImport(line.ticker, line.name, line.category)
+      upserted++
+      lineAudit.push({ id: line.id, action: 'UPSERTED', ticker: line.ticker })
+    } catch (error) {
+      skipped++
+      const message = error instanceof Error ? error.message : 'Erro desconhecido'
+      errors.push(`Posicao linha ${line.lineNumber}: ${message}`)
+      lineAudit.push({ id: line.id, action: 'ERROR', error: message })
+    }
+  }
+
+  await prisma.auditLog.create({
+    data: {
+      entityType: 'IMPORT_B3_POSICAO',
+      entityId: 'batch-confirm',
+      action: 'CREATE',
+      previousValue: null,
+      newValue: JSON.stringify({ upserted, skipped, reviewed: lines.length, errors, lines: lineAudit }),
+      changedBy: userId,
+      changedAt: new Date(),
+    },
+  })
+
+  return {
+    upserted,
+    skipped,
+    reviewed: lines.length,
+    errors,
+  }
+}
+
 /**
  * Importa linhas de negociacao criando transacoes idempotentes.
  */
 export async function importNegociacaoRows(userId: string, rows: NegociacaoRow[]): Promise<ImportResult> {
-  const accountId = await getDefaultAccountForUser(userId)
+  const clientId = await getOrCreateClientForUser(userId)
   let imported = 0
   let skipped = 0
   const errors: string[] = []
+  const reviewRows: Array<{ referenceId: string; reason: string; instituicao: string }> = []
+  const institutionAudit = new Map<string, { accountName: string; institutionCreated: boolean; accountCreated: boolean }>()
 
   for (const row of rows) {
     try {
+      if (!row.instituicao?.trim()) {
+        reviewRows.push({ referenceId: row.referenceId, reason: 'instituicao_ausente', instituicao: '' })
+        skipped++
+        continue
+      }
+
+      const resolution = await resolveImportAccountForInstitution(row.instituicao, clientId, prisma)
+      institutionAudit.set(resolution.institutionName, {
+        accountName: resolution.accountName,
+        institutionCreated: resolution.institutionCreated,
+        accountCreated: resolution.accountCreated,
+      })
+
       const category = inferCategoryFromTickerAndMarket(row.ticker, row.mercado)
       const assetId = await upsertAssetFromImport(row.ticker, row.ticker, category)
 
       const tx = await createTransaction({
         referenceId: row.referenceId,
         type: row.type,
-        accountId,
+        accountId: resolution.accountId,
         assetId,
         quantity: row.quantity,
         price: row.price,
@@ -910,25 +1371,72 @@ export async function importNegociacaoRows(userId: string, rows: NegociacaoRow[]
     }
   }
 
+  await prisma.auditLog.create({
+    data: {
+      entityType: 'IMPORT_B3_NEGOCIACAO',
+      entityId: 'batch',
+      action: 'CREATE',
+      previousValue: null,
+      newValue: JSON.stringify({
+        imported,
+        skipped,
+        errors,
+        reviewRows,
+        institutions: Array.from(institutionAudit.entries()).map(([institution, info]) => ({
+          institution,
+          accountName: info.accountName,
+          institutionStatus: info.institutionCreated ? 'NOVA' : 'JÁ EXISTE',
+          accountStatus: info.accountCreated ? 'NOVA' : 'JÁ EXISTE',
+        })),
+      }),
+      changedBy: userId,
+      changedAt: new Date(),
+    },
+  })
+
   return { imported, skipped, errors }
 }
 
 /**
  * Importa linhas de movimentacao criando transacoes idempotentes.
  */
-export async function importMovimentacaoRows(userId: string, rows: MovimentacaoRow[]): Promise<ImportResult> {
-  const accountId = await getDefaultAccountForUser(userId)
+export async function importMovimentacaoRows(
+  userId: string,
+  rows: MovimentacaoRow[],
+  parserReviewRows: MovimentacaoReviewRow[] = [],
+): Promise<ImportResult> {
+  const clientId = await getOrCreateClientForUser(userId)
   let imported = 0
   let skipped = 0
   const errors: string[] = []
+  const runtimeReviewRows: Array<{ referenceId: string; reason: string; instituicao: string }> = []
+  const institutionAudit = new Map<string, { accountName: string; institutionCreated: boolean; accountCreated: boolean }>()
 
   for (const row of rows) {
     try {
+      if (!row.instituicao?.trim()) {
+        runtimeReviewRows.push({ referenceId: row.referenceId, reason: 'instituicao_ausente', instituicao: '' })
+        skipped++
+        continue
+      }
+
+      const resolution = await resolveImportAccountForInstitution(row.instituicao, clientId, prisma)
+      institutionAudit.set(resolution.institutionName, {
+        accountName: resolution.accountName,
+        institutionCreated: resolution.institutionCreated,
+        accountCreated: resolution.accountCreated,
+      })
+
       const category = inferCategoryFromTickerAndMarket(row.ticker)
       const assetId = await upsertAssetFromImport(row.ticker, row.ticker, category)
       const totalAmount = row.total ?? 0
 
       if (totalAmount <= 0) {
+        runtimeReviewRows.push({
+          referenceId: row.referenceId,
+          reason: 'valor_total_invalido',
+          instituicao: row.instituicao,
+        })
         skipped++
         continue
       }
@@ -936,7 +1444,7 @@ export async function importMovimentacaoRows(userId: string, rows: MovimentacaoR
       const tx = await createTransaction({
         referenceId: row.referenceId,
         type: row.type,
-        accountId,
+        accountId: resolution.accountId,
         assetId,
         quantity: row.quantity,
         price: row.price ?? undefined,
@@ -956,18 +1464,70 @@ export async function importMovimentacaoRows(userId: string, rows: MovimentacaoR
     }
   }
 
-  return { imported, skipped, errors }
+  await prisma.auditLog.create({
+    data: {
+      entityType: 'IMPORT_B3_MOVIMENTACAO',
+      entityId: 'batch',
+      action: 'CREATE',
+      previousValue: null,
+      newValue: JSON.stringify({
+        imported,
+        skipped,
+        errors,
+        reviewRows: {
+          parser: parserReviewRows,
+          runtime: runtimeReviewRows,
+        },
+        invalidRows: parserReviewRows.length,
+        institutions: Array.from(institutionAudit.entries()).map(([institution, info]) => ({
+          institution,
+          accountName: info.accountName,
+          institutionStatus: info.institutionCreated ? 'NOVA' : 'JÁ EXISTE',
+          accountStatus: info.accountCreated ? 'NOVA' : 'JÁ EXISTE',
+        })),
+      }),
+      changedBy: userId,
+      changedAt: new Date(),
+    },
+  })
+
+  const parserReviewMessages = parserReviewRows.map((item) => (
+    `REVISAR linha ${item.lineNumber}: ${item.reason}`
+  ))
+
+  return {
+    imported,
+    skipped: skipped + parserReviewRows.length,
+    errors: [...errors, ...parserReviewMessages],
+  }
 }
 
 /**
  * Importa linhas de posicao sincronizando apenas o catalogo de ativos.
  */
-export async function importPosicaoRows(rows: PosicaoRow[]): Promise<ImportResult> {
+export async function importPosicaoRows(userId: string, rows: PosicaoRow[]): Promise<ImportResult> {
+  const clientId = await getOrCreateClientForUser(userId)
   let upserted = 0
+  let skipped = 0
   const errors: string[] = []
+  const reviewRows: Array<{ ticker: string; reason: string; instituicao: string }> = []
+  const institutionAudit = new Map<string, { accountName: string; institutionCreated: boolean; accountCreated: boolean }>()
 
   for (const row of rows) {
     try {
+      if (!row.instituicao?.trim()) {
+        reviewRows.push({ ticker: row.ticker, reason: 'instituicao_ausente', instituicao: '' })
+        skipped++
+        continue
+      }
+
+      const resolution = await resolveImportAccountForInstitution(row.instituicao, clientId, prisma)
+      institutionAudit.set(resolution.institutionName, {
+        accountName: resolution.accountName,
+        institutionCreated: resolution.institutionCreated,
+        accountCreated: resolution.accountCreated,
+      })
+
       await upsertAssetFromImport(row.ticker, row.name, row.category)
       upserted++
     } catch (error) {
@@ -976,5 +1536,28 @@ export async function importPosicaoRows(rows: PosicaoRow[]): Promise<ImportResul
     }
   }
 
-  return { upserted, errors }
+  await prisma.auditLog.create({
+    data: {
+      entityType: 'IMPORT_B3_POSICAO',
+      entityId: 'batch',
+      action: 'CREATE',
+      previousValue: null,
+      newValue: JSON.stringify({
+        upserted,
+        skipped,
+        errors,
+        reviewRows,
+        institutions: Array.from(institutionAudit.entries()).map(([institution, info]) => ({
+          institution,
+          accountName: info.accountName,
+          institutionStatus: info.institutionCreated ? 'NOVA' : 'JÁ EXISTE',
+          accountStatus: info.accountCreated ? 'NOVA' : 'JÁ EXISTE',
+        })),
+      }),
+      changedBy: userId,
+      changedAt: new Date(),
+    },
+  })
+
+  return { upserted, skipped, errors }
 }

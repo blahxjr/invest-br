@@ -2,32 +2,31 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import {
+  analyzeMovimentacaoFile,
   analyzeNegociacaoFile,
+  analyzePosicaoFile,
+  confirmAndImportMovimentacao,
   confirmAndImportNegociacao,
-  importMovimentacao,
-  importPosicao,
+  confirmAndImportPosicao,
   resetImportDataAction,
+  type AnalyzeMovimentacaoResponse,
   type AnalyzeNegociacaoResponse,
+  type AnalyzePosicaoResponse,
+  type ConfirmMovimentacaoPayload,
+  type ConfirmMovimentacaoResponse,
   type ConfirmImportPayload,
   type ConfirmImportResponse,
+  type ConfirmPosicaoPayload,
+  type ConfirmPosicaoResponse,
   type ResetImportResponse,
   type SerializableAssetClassOption,
+  type SerializableMovimentacaoLine,
   type SerializableMissingClass,
   type SerializableUnresolvedAsset,
 } from './actions'
-import type { ImportResult } from '@/modules/b3/service'
+import type { PosicaoReviewLine } from '@/modules/b3/service'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { AssetSearchCombobox } from '@/components/ui/AssetSearchCombobox'
-
-type ImportAction = (formData: FormData) => Promise<ImportResult>
-
-type ImportCardProps = {
-  title: string
-  description: string
-  submitLabel: string
-  action: ImportAction
-  onFinished: (result: ImportResult) => void
-}
 
 type WizardStep = 1 | 2 | 3 | 4
 
@@ -49,78 +48,6 @@ const ASSET_CATEGORY_OPTIONS = [
 ] as const
 
 const CAN_RESET_IMPORT_DATA = process.env.NODE_ENV !== 'production'
-
-function ResultBox({ result }: { result: ImportResult | null }) {
-  if (!result) return null
-
-  const hasErrors = result.errors.length > 0
-
-  return (
-    <div
-      className={[
-        'mt-3 rounded-lg border p-3 text-sm',
-        hasErrors ? 'border-red-200 bg-red-50 text-red-700' : 'border-green-200 bg-green-50 text-green-700',
-      ].join(' ')}
-    >
-      {typeof result.upserted === 'number' ? (
-        <p>{result.upserted} ativos sincronizados.</p>
-      ) : (
-        <p>
-          {result.imported ?? 0} transacoes importadas, {result.skipped ?? 0} ignoradas.
-        </p>
-      )}
-      {hasErrors && (
-        <ul className="mt-2 list-disc pl-5">
-          {result.errors.slice(0, 5).map((err) => (
-            <li key={err}>{err}</li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
-}
-
-function ImportCard({ title, description, submitLabel, action, onFinished }: ImportCardProps) {
-  const [result, setResult] = useState<ImportResult | null>(null)
-  const [isPending, startTransition] = useTransition()
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5">
-      <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-      <p className="text-sm text-gray-500 mt-1">{description}</p>
-
-      <form
-        className="mt-4 flex flex-col gap-3"
-        onSubmit={(event) => {
-          event.preventDefault()
-          const formData = new FormData(event.currentTarget)
-          startTransition(async () => {
-            const response = await action(formData)
-            setResult(response)
-            onFinished(response)
-          })
-        }}
-      >
-        <input
-          type="file"
-          name="file"
-          accept=".xlsx,.xls"
-          className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100"
-          required
-        />
-        <button
-          type="submit"
-          disabled={isPending}
-          className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
-        >
-          {isPending ? 'Importando...' : submitLabel}
-        </button>
-      </form>
-
-      <ResultBox result={result} />
-    </div>
-  )
-}
 
 function ResetImportDataCard() {
   const [openConfirm, setOpenConfirm] = useState(false)
@@ -150,7 +77,10 @@ function ResetImportDataCard() {
 
         <button
           type="button"
-          onClick={() => setOpenConfirm(true)}
+          onClick={() => {
+            window.alert('Atenção: esta operação remove dados de importação e não pode ser desfeita.')
+            setOpenConfirm(true)
+          }}
           disabled={isPending}
           className="mt-4 inline-flex items-center justify-center rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-300"
         >
@@ -795,15 +725,19 @@ function NegociacaoWizardCard() {
             {institutionPreviews.map((preview) => (
               <p key={preview.normalizedName} className="flex items-center gap-2">
                 <span>
-                  • {preview.displayName} ({preview.inferredType}) — {preview.isNew ? 'será criada automaticamente' : 'já cadastrada'} [{preview.rowCount} transações]
+                  • {preview.displayName} ({preview.inferredType}) — instituição {preview.isNew ? 'será criada automaticamente' : 'já cadastrada'}; conta {preview.accountStatus === 'NOVA' ? 'será criada automaticamente' : 'já cadastrada'} [{preview.rowCount} transações]
                 </span>
-                <span
-                  className={[
-                    'rounded-full px-2 py-0.5 text-[10px] font-semibold',
-                    preview.isNew ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600',
-                  ].join(' ')}
-                >
-                  {preview.isNew ? 'NOVA' : 'JÁ EXISTE'}
+                <span className={[
+                  'rounded-full px-2 py-0.5 text-[10px] font-semibold',
+                  preview.isNew ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600',
+                ].join(' ')}>
+                  INST {preview.isNew ? 'NOVA' : 'JÁ EXISTE'}
+                </span>
+                <span className={[
+                  'rounded-full px-2 py-0.5 text-[10px] font-semibold',
+                  preview.accountStatus === 'NOVA' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600',
+                ].join(' ')}>
+                  CONTA {preview.accountStatus}
                 </span>
               </p>
             ))}
@@ -904,46 +838,373 @@ function NegociacaoWizardCard() {
   )
 }
 
-export default function ImportPageClient() {
-  const [toastMessage, setToastMessage] = useState<string | null>(null)
+function toDateInputValue(value: string) {
+  return value.slice(0, 10)
+}
 
-  const handleFinished = (result: ImportResult) => {
-    const message =
-      typeof result.upserted === 'number'
-        ? `${result.upserted} ativos sincronizados.`
-        : `${result.imported ?? 0} transacoes importadas, ${result.skipped ?? 0} ignoradas.`
+function MovimentacaoWizardCard() {
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1)
+  const [analysis, setAnalysis] = useState<AnalyzeMovimentacaoResponse | null>(null)
+  const [lines, setLines] = useState<SerializableMovimentacaoLine[]>([])
+  const [result, setResult] = useState<ConfirmMovimentacaoResponse | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [isPending, startTransition] = useTransition()
 
-    setToastMessage(message)
-    setTimeout(() => setToastMessage(null), 3000)
+  const updateLine = (id: string, patch: Partial<SerializableMovimentacaoLine>) => {
+    setLines((current) => current.map((line) => (line.id === id ? { ...line, ...patch } : line)))
+  }
+
+  const handleAnalyze = (formData: FormData) => {
+    setError(null)
+    startTransition(async () => {
+      const response = await analyzeMovimentacaoFile(formData)
+      if (response.error) {
+        setError(response.error)
+        setStep(1)
+        return
+      }
+      setAnalysis(response)
+      setLines(response.lines)
+      setStep(2)
+    })
+  }
+
+  const handleConfirm = () => {
+    setError(null)
+    const payload: ConfirmMovimentacaoPayload = { lines }
+    startTransition(async () => {
+      const response = await confirmAndImportMovimentacao(payload)
+      if (response.error) {
+        setError(response.error)
+        return
+      }
+      setResult(response)
+      setStep(4)
+    })
   }
 
   return (
-    <div className="space-y-4 relative">
-      {toastMessage && (
-        <div className="fixed top-4 right-4 z-50 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 shadow-md">
-          {toastMessage}
+    <div className="bg-white rounded-xl border border-gray-200 p-5">
+      <h2 className="text-lg font-semibold text-gray-900">Movimentação</h2>
+      <p className="text-sm text-gray-500 mt-1">Upload, análise, revisão por linha e confirmação final antes da persistência.</p>
+
+      {step === 1 && (
+        <form
+          className="mt-4 flex flex-col gap-3"
+          onSubmit={(event) => {
+            event.preventDefault()
+            handleAnalyze(new FormData(event.currentTarget))
+          }}
+        >
+          <input
+            type="file"
+            name="file"
+            accept=".xlsx,.xls"
+            className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100"
+            required
+          />
+          <button
+            type="submit"
+            disabled={isPending}
+            className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+          >
+            {isPending ? 'Analisando...' : 'Analisar movimentação'}
+          </button>
+          {isPending && <AnalysisSkeleton />}
+        </form>
+      )}
+
+      {step === 2 && analysis && (
+        <div className="mt-4 space-y-3">
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+            {analysis.summary.totalRows} linha(s) analisada(s): {analysis.summary.importableRows} pronta(s), {analysis.summary.reviewRows} para revisar.
+          </div>
+
+          <div className="max-h-80 overflow-auto rounded-lg border border-gray-200">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50 text-gray-700">
+                <tr>
+                  <th className="p-2 text-left">Ação</th>
+                  <th className="p-2 text-left">Data</th>
+                  <th className="p-2 text-left">Tipo</th>
+                  <th className="p-2 text-left">Ticker</th>
+                  <th className="p-2 text-left">Instituição</th>
+                  <th className="p-2 text-left">Qtd</th>
+                  <th className="p-2 text-left">Total</th>
+                  <th className="p-2 text-left">Problemas</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((line) => (
+                  <tr key={line.id} className="border-t border-gray-100 align-top">
+                    <td className="p-2">
+                      <select
+                        className="rounded-md border border-gray-300 px-2 py-1"
+                        value={line.action}
+                        onChange={(event) => updateLine(line.id, { action: event.target.value as SerializableMovimentacaoLine['action'] })}
+                      >
+                        <option value="IMPORT">IMPORTAR</option>
+                        <option value="SKIP">IGNORAR</option>
+                      </select>
+                    </td>
+                    <td className="p-2">
+                      <input
+                        type="date"
+                        className="rounded-md border border-gray-300 px-2 py-1"
+                        value={toDateInputValue(line.date)}
+                        onChange={(event) => updateLine(line.id, { date: `${event.target.value}T00:00:00.000Z` })}
+                      />
+                    </td>
+                    <td className="p-2">
+                      <select
+                        className="rounded-md border border-gray-300 px-2 py-1"
+                        value={line.type}
+                        onChange={(event) => updateLine(line.id, { type: event.target.value as SerializableMovimentacaoLine['type'] })}
+                      >
+                        <option value="BUY">BUY</option>
+                        <option value="DIVIDEND">DIVIDEND</option>
+                      </select>
+                    </td>
+                    <td className="p-2">
+                      <input className="rounded-md border border-gray-300 px-2 py-1" value={line.ticker} onChange={(event) => updateLine(line.id, { ticker: event.target.value.toUpperCase() })} />
+                    </td>
+                    <td className="p-2">
+                      <input className="rounded-md border border-gray-300 px-2 py-1" value={line.instituicao} onChange={(event) => updateLine(line.id, { instituicao: event.target.value.toUpperCase() })} />
+                    </td>
+                    <td className="p-2">
+                      <input
+                        type="number"
+                        className="w-24 rounded-md border border-gray-300 px-2 py-1"
+                        value={line.quantity}
+                        onChange={(event) => updateLine(line.id, { quantity: Number(event.target.value) })}
+                      />
+                    </td>
+                    <td className="p-2">
+                      <input
+                        type="number"
+                        className="w-28 rounded-md border border-gray-300 px-2 py-1"
+                        value={line.total ?? 0}
+                        onChange={(event) => updateLine(line.id, { total: Number(event.target.value) })}
+                      />
+                    </td>
+                    <td className="p-2 text-xs text-amber-700">{line.issues.join(', ') || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <button type="button" onClick={() => setStep(1)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700">← Voltar</button>
+            <button type="button" onClick={() => setStep(3)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white">Avançar →</button>
+          </div>
         </div>
       )}
 
+      {step === 3 && (
+        <div className="mt-4 space-y-3">
+          <div className="rounded-lg border border-gray-200 p-3 text-sm text-gray-700">
+            <p>Linhas para importar: {lines.filter((line) => line.action === 'IMPORT').length}</p>
+            <p>Linhas para ignorar: {lines.filter((line) => line.action === 'SKIP').length}</p>
+            <p>Linhas com problemas: {lines.filter((line) => line.issues.length > 0).length}</p>
+          </div>
+          <div className="flex items-center justify-between">
+            <button type="button" onClick={() => setStep(2)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700">← Voltar</button>
+            <button type="button" onClick={handleConfirm} disabled={isPending} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-emerald-300">
+              {isPending ? 'Confirmando...' : '✅ Confirmar e Importar'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 4 && result && (
+        <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800 text-sm">
+          <p className="font-semibold">Importação de movimentação concluída</p>
+          <p>Importadas: {result.imported}</p>
+          <p>Ignoradas: {result.skipped}</p>
+          <p>Revisadas: {result.reviewed}</p>
+          {result.errors.length > 0 && <p>Erros: {result.errors.length}</p>}
+        </div>
+      )}
+
+      {error && <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+    </div>
+  )
+}
+
+function PosicaoWizardCard() {
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1)
+  const [analysis, setAnalysis] = useState<AnalyzePosicaoResponse | null>(null)
+  const [lines, setLines] = useState<PosicaoReviewLine[]>([])
+  const [result, setResult] = useState<ConfirmPosicaoResponse | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [isPending, startTransition] = useTransition()
+
+  const updateLine = (id: string, patch: Partial<PosicaoReviewLine>) => {
+    setLines((current) => current.map((line) => (line.id === id ? { ...line, ...patch } : line)))
+  }
+
+  const handleAnalyze = (formData: FormData) => {
+    setError(null)
+    startTransition(async () => {
+      const response = await analyzePosicaoFile(formData)
+      if (response.error) {
+        setError(response.error)
+        setStep(1)
+        return
+      }
+      setAnalysis(response)
+      setLines(response.lines)
+      setStep(2)
+    })
+  }
+
+  const handleConfirm = () => {
+    setError(null)
+    const payload: ConfirmPosicaoPayload = { lines }
+    startTransition(async () => {
+      const response = await confirmAndImportPosicao(payload)
+      if (response.error) {
+        setError(response.error)
+        return
+      }
+      setResult(response)
+      setStep(4)
+    })
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-5">
+      <h2 className="text-lg font-semibold text-gray-900">Posição</h2>
+      <p className="text-sm text-gray-500 mt-1">Upload, análise, revisão por linha e confirmação final antes da sincronização.</p>
+
+      {step === 1 && (
+        <form
+          className="mt-4 flex flex-col gap-3"
+          onSubmit={(event) => {
+            event.preventDefault()
+            handleAnalyze(new FormData(event.currentTarget))
+          }}
+        >
+          <input
+            type="file"
+            name="file"
+            accept=".xlsx,.xls"
+            className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100"
+            required
+          />
+          <button
+            type="submit"
+            disabled={isPending}
+            className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+          >
+            {isPending ? 'Analisando...' : 'Analisar posição'}
+          </button>
+          {isPending && <AnalysisSkeleton />}
+        </form>
+      )}
+
+      {step === 2 && analysis && (
+        <div className="mt-4 space-y-3">
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+            {analysis.summary.totalRows} linha(s) analisada(s): {analysis.summary.importableRows} pronta(s), {analysis.summary.reviewRows} para revisar.
+          </div>
+
+          <div className="max-h-80 overflow-auto rounded-lg border border-gray-200">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50 text-gray-700">
+                <tr>
+                  <th className="p-2 text-left">Ação</th>
+                  <th className="p-2 text-left">Ticker</th>
+                  <th className="p-2 text-left">Nome</th>
+                  <th className="p-2 text-left">Categoria</th>
+                  <th className="p-2 text-left">Instituição</th>
+                  <th className="p-2 text-left">Problemas</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((line) => (
+                  <tr key={line.id} className="border-t border-gray-100 align-top">
+                    <td className="p-2">
+                      <select
+                        className="rounded-md border border-gray-300 px-2 py-1"
+                        value={line.action}
+                        onChange={(event) => updateLine(line.id, { action: event.target.value as PosicaoReviewLine['action'] })}
+                      >
+                        <option value="IMPORT">IMPORTAR</option>
+                        <option value="SKIP">IGNORAR</option>
+                      </select>
+                    </td>
+                    <td className="p-2"><input className="rounded-md border border-gray-300 px-2 py-1" value={line.ticker} onChange={(event) => updateLine(line.id, { ticker: event.target.value.toUpperCase() })} /></td>
+                    <td className="p-2"><input className="rounded-md border border-gray-300 px-2 py-1" value={line.name} onChange={(event) => updateLine(line.id, { name: event.target.value })} /></td>
+                    <td className="p-2">
+                      <select
+                        className="rounded-md border border-gray-300 px-2 py-1"
+                        value={line.category}
+                        onChange={(event) => updateLine(line.id, { category: event.target.value as PosicaoReviewLine['category'] })}
+                      >
+                        <option value="STOCK">STOCK</option>
+                        <option value="FII">FII</option>
+                        <option value="ETF">ETF</option>
+                        <option value="BDR">BDR</option>
+                      </select>
+                    </td>
+                    <td className="p-2"><input className="rounded-md border border-gray-300 px-2 py-1" value={line.instituicao} onChange={(event) => updateLine(line.id, { instituicao: event.target.value.toUpperCase() })} /></td>
+                    <td className="p-2 text-xs text-amber-700">{line.issues.join(', ') || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <button type="button" onClick={() => setStep(1)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700">← Voltar</button>
+            <button type="button" onClick={() => setStep(3)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white">Avançar →</button>
+          </div>
+        </div>
+      )}
+
+      {step === 3 && (
+        <div className="mt-4 space-y-3">
+          <div className="rounded-lg border border-gray-200 p-3 text-sm text-gray-700">
+            <p>Linhas para sincronizar: {lines.filter((line) => line.action === 'IMPORT').length}</p>
+            <p>Linhas para ignorar: {lines.filter((line) => line.action === 'SKIP').length}</p>
+            <p>Linhas com problemas: {lines.filter((line) => line.issues.length > 0).length}</p>
+          </div>
+          <div className="flex items-center justify-between">
+            <button type="button" onClick={() => setStep(2)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700">← Voltar</button>
+            <button type="button" onClick={handleConfirm} disabled={isPending} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-emerald-300">
+              {isPending ? 'Confirmando...' : '✅ Confirmar e Importar'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 4 && result && (
+        <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800 text-sm">
+          <p className="font-semibold">Importação de posição concluída</p>
+          <p>Sincronizadas: {result.upserted}</p>
+          <p>Ignoradas: {result.skipped}</p>
+          <p>Revisadas: {result.reviewed}</p>
+          {result.errors.length > 0 && <p>Erros: {result.errors.length}</p>}
+        </div>
+      )}
+
+      {error && <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+    </div>
+  )
+}
+
+export default function ImportPageClient() {
+  return (
+    <div className="space-y-4 relative">
       <NegociacaoWizardCard />
 
+      <MovimentacaoWizardCard />
+
+      <PosicaoWizardCard />
+
       {CAN_RESET_IMPORT_DATA && <ResetImportDataCard />}
-
-      <ImportCard
-        title="Movimentação"
-        description="Importa liquidações e proventos elegíveis da planilha de movimentação."
-        submitLabel="Importar movimentação"
-        action={importMovimentacao}
-        onFinished={handleFinished}
-      />
-
-      <ImportCard
-        title="Posição"
-        description="Sincroniza o catálogo de ativos a partir das planilhas de posição."
-        submitLabel="Importar posição"
-        action={importPosicao}
-        onFinished={handleFinished}
-      />
     </div>
   )
 }

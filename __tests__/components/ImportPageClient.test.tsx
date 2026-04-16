@@ -5,17 +5,21 @@ import ImportPageClient from '@/app/(app)/import/import-page-client'
 
 const actionsMock = vi.hoisted(() => ({
   analyzeNegociacaoFile: vi.fn(),
+  analyzeMovimentacaoFile: vi.fn(),
+  analyzePosicaoFile: vi.fn(),
   confirmAndImportNegociacao: vi.fn(),
-  importMovimentacao: vi.fn(),
-  importPosicao: vi.fn(),
+  confirmAndImportMovimentacao: vi.fn(),
+  confirmAndImportPosicao: vi.fn(),
   resetImportDataAction: vi.fn(),
 }))
 
 vi.mock('@/app/(app)/import/actions', () => ({
   analyzeNegociacaoFile: actionsMock.analyzeNegociacaoFile,
+  analyzeMovimentacaoFile: actionsMock.analyzeMovimentacaoFile,
+  analyzePosicaoFile: actionsMock.analyzePosicaoFile,
   confirmAndImportNegociacao: actionsMock.confirmAndImportNegociacao,
-  importMovimentacao: actionsMock.importMovimentacao,
-  importPosicao: actionsMock.importPosicao,
+  confirmAndImportMovimentacao: actionsMock.confirmAndImportMovimentacao,
+  confirmAndImportPosicao: actionsMock.confirmAndImportPosicao,
   resetImportDataAction: actionsMock.resetImportDataAction,
 }))
 
@@ -80,6 +84,9 @@ function buildAnalyzeResponse() {
         displayName: 'Nu Invest',
         inferredType: 'Corretora',
         isNew: true,
+        accountName: 'Nu Invest',
+        accountStatus: 'NOVA',
+        isAccountNew: true,
         rowCount: 1,
       },
     ],
@@ -95,8 +102,11 @@ function buildAnalyzeResponse() {
 describe('ImportPageClient wizard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    actionsMock.importMovimentacao.mockResolvedValue({ imported: 0, skipped: 0, errors: [] })
-    actionsMock.importPosicao.mockResolvedValue({ upserted: 0, errors: [] })
+    vi.spyOn(window, 'alert').mockImplementation(() => undefined)
+    actionsMock.analyzeMovimentacaoFile.mockResolvedValue({ lines: [], summary: { totalRows: 0, importableRows: 0, reviewRows: 0 } })
+    actionsMock.analyzePosicaoFile.mockResolvedValue({ lines: [], summary: { totalRows: 0, importableRows: 0, reviewRows: 0 } })
+    actionsMock.confirmAndImportMovimentacao.mockResolvedValue({ imported: 0, skipped: 0, reviewed: 0, errors: [] })
+    actionsMock.confirmAndImportPosicao.mockResolvedValue({ upserted: 0, skipped: 0, reviewed: 0, errors: [] })
     actionsMock.resetImportDataAction.mockResolvedValue({
       success: true,
       summary: {
@@ -193,6 +203,10 @@ describe('ImportPageClient wizard', () => {
     render(<ImportPageClient />)
     await submitAnalyze()
 
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Avançar →' })).toBeInTheDocument()
+    })
+
     fireEvent.click(screen.getByRole('button', { name: 'Avançar →' }))
 
     expect(screen.getByText(/🏷️ 1 classe\(s\) de ativo serão criadas:/i)).toBeInTheDocument()
@@ -230,6 +244,10 @@ describe('ImportPageClient wizard', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Limpar dados de teste' }))
 
+    expect(window.alert).toHaveBeenCalledWith(
+      'Atenção: esta operação remove dados de importação e não pode ser desfeita.',
+    )
+
     expect(screen.getByRole('button', { name: 'Limpar base' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Limpar base' }))
@@ -240,5 +258,21 @@ describe('ImportPageClient wizard', () => {
 
     expect(screen.getByText('Base limpa com sucesso.')).toBeInTheDocument()
     expect(screen.getByText('4 transações e 2 ativos removidos.')).toBeInTheDocument()
+  })
+
+  it('renderiza limpeza apos os cards de movimentacao e posicao', () => {
+    render(<ImportPageClient />)
+
+    const titles = screen.getAllByRole('heading', { level: 2 }).map((element) => element.textContent)
+
+    expect(titles.indexOf('Movimentação')).toBeLessThan(titles.indexOf('Limpar base de importação'))
+    expect(titles.indexOf('Posição')).toBeLessThan(titles.indexOf('Limpar base de importação'))
+  })
+
+  it('exibe botões de análise para movimentação e posição', () => {
+    render(<ImportPageClient />)
+
+    expect(screen.getByRole('button', { name: 'Analisar movimentação' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Analisar posição' })).toBeInTheDocument()
   })
 })

@@ -3,22 +3,32 @@
 import { auth } from '@/lib/auth'
 import { resetImportData } from '@/modules/b3/reset-service'
 import {
+  analyzeMovimentacaoRows,
   analyzeNegociacaoRows,
+  analyzePosicaoRows,
+  confirmAndImportMovimentacaoForUser,
   confirmAndImportNegociacaoForUser,
+  confirmAndImportPosicaoForUser,
   type AssetClassOption,
+  type AnalyzeMovimentacaoResult,
   type AnalyzeNegociacaoResult,
+  type AnalyzePosicaoResult,
+  type ConfirmMovimentacaoResult,
+  type ConfirmPosicaoResult,
   type ConfirmImportResult,
   type ExistingAssetOption,
   type ImportPayload,
   type InstitutionPreview,
   type MissingClass,
+  type MovimentacaoReviewLine,
+  type PosicaoReviewLine,
   importMovimentacaoRows,
   importNegociacaoRows,
   importPosicaoRows,
   type ImportResult,
 } from '@/modules/b3/service'
 import {
-  parseMovimentacao,
+  parseMovimentacaoDetailed,
   parseNegociacao,
   parsePosicao,
   type RawSheet,
@@ -115,6 +125,35 @@ export type ConfirmImportResponse = ConfirmImportResult & {
   error?: string
 }
 
+export type SerializableMovimentacaoLine = Omit<MovimentacaoReviewLine, 'date'> & {
+  date: string
+}
+
+export type AnalyzeMovimentacaoResponse = AnalyzeMovimentacaoResult & {
+  lines: SerializableMovimentacaoLine[]
+  error?: string
+}
+
+export type ConfirmMovimentacaoPayload = {
+  lines: SerializableMovimentacaoLine[]
+}
+
+export type ConfirmMovimentacaoResponse = ConfirmMovimentacaoResult & {
+  error?: string
+}
+
+export type AnalyzePosicaoResponse = AnalyzePosicaoResult & {
+  error?: string
+}
+
+export type ConfirmPosicaoPayload = {
+  lines: PosicaoReviewLine[]
+}
+
+export type ConfirmPosicaoResponse = ConfirmPosicaoResult & {
+  error?: string
+}
+
 export type ResetImportResponse = {
   success: boolean
   summary?: {
@@ -200,6 +239,13 @@ function toImportPayload(payload: ConfirmImportPayload): ImportPayload {
   }
 }
 
+function toMovimentacaoLines(lines: SerializableMovimentacaoLine[]): MovimentacaoReviewLine[] {
+  return lines.map((line) => ({
+    ...line,
+    date: new Date(line.date),
+  }))
+}
+
 /**
  * Importa planilha de negociacao da B3.
  */
@@ -235,9 +281,9 @@ export async function importMovimentacao(formData: FormData): Promise<ImportResu
     const file = await getUploadedFile(formData)
     const workbook = workbookFromArrayBuffer(await file.arrayBuffer())
     const rows = sheetRows(workbook, 'Movimentação')
-    const parsedRows = parseMovimentacao(rows)
+    const parsed = parseMovimentacaoDetailed(rows)
 
-    return importMovimentacaoRows(session.user.id, parsedRows)
+    return importMovimentacaoRows(session.user.id, parsed.readyRows, parsed.reviewRows)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Erro desconhecido'
     return { imported: 0, skipped: 0, errors: [message] }
@@ -258,10 +304,130 @@ export async function importPosicao(formData: FormData): Promise<ImportResult> {
     const workbook = workbookFromArrayBuffer(await file.arrayBuffer())
     const parsedRows = parsePosicao(allSheets(workbook))
 
-    return importPosicaoRows(parsedRows)
+    return importPosicaoRows(session.user.id, parsedRows)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Erro desconhecido'
     return { upserted: 0, errors: [message] }
+  }
+}
+
+/**
+ * Analisa planilha de movimentação da B3 sem persistir dados.
+ */
+export async function analyzeMovimentacaoFile(formData: FormData): Promise<AnalyzeMovimentacaoResponse> {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return {
+      lines: [],
+      summary: { totalRows: 0, importableRows: 0, reviewRows: 0 },
+      error: 'Usuario nao autenticado',
+    }
+  }
+
+  try {
+    const file = await getUploadedFile(formData)
+    const workbook = workbookFromArrayBuffer(await file.arrayBuffer())
+    const rows = sheetRows(workbook, 'Movimentação')
+    const parsed = parseMovimentacaoDetailed(rows)
+    const result = await analyzeMovimentacaoRows(parsed.readyRows, parsed.reviewRows)
+
+    return {
+      ...result,
+      lines: result.lines.map((line) => ({ ...line, date: line.date.toISOString() })),
+    }
+  } catch (error) {
+    return {
+      lines: [],
+      summary: { totalRows: 0, importableRows: 0, reviewRows: 0 },
+      error: error instanceof Error ? error.message : 'Erro desconhecido',
+    }
+  }
+}
+
+/**
+ * Confirma e persiste movimentações após revisão manual.
+ */
+export async function confirmAndImportMovimentacao(
+  payload: ConfirmMovimentacaoPayload,
+): Promise<ConfirmMovimentacaoResponse> {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return {
+      imported: 0,
+      skipped: 0,
+      reviewed: 0,
+      errors: [],
+      error: 'Usuario nao autenticado',
+    }
+  }
+
+  try {
+    const result = await confirmAndImportMovimentacaoForUser(session.user.id, toMovimentacaoLines(payload.lines))
+    return result
+  } catch (error) {
+    return {
+      imported: 0,
+      skipped: 0,
+      reviewed: 0,
+      errors: [],
+      error: error instanceof Error ? error.message : 'Erro desconhecido',
+    }
+  }
+}
+
+/**
+ * Analisa planilha de posição da B3 sem persistir dados.
+ */
+export async function analyzePosicaoFile(formData: FormData): Promise<AnalyzePosicaoResponse> {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return {
+      lines: [],
+      summary: { totalRows: 0, importableRows: 0, reviewRows: 0 },
+      error: 'Usuario nao autenticado',
+    }
+  }
+
+  try {
+    const file = await getUploadedFile(formData)
+    const workbook = workbookFromArrayBuffer(await file.arrayBuffer())
+    const parsedRows = parsePosicao(allSheets(workbook))
+    return await analyzePosicaoRows(parsedRows)
+  } catch (error) {
+    return {
+      lines: [],
+      summary: { totalRows: 0, importableRows: 0, reviewRows: 0 },
+      error: error instanceof Error ? error.message : 'Erro desconhecido',
+    }
+  }
+}
+
+/**
+ * Confirma e persiste posições após revisão manual.
+ */
+export async function confirmAndImportPosicao(payload: ConfirmPosicaoPayload): Promise<ConfirmPosicaoResponse> {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return {
+      upserted: 0,
+      skipped: 0,
+      reviewed: 0,
+      errors: [],
+      error: 'Usuario nao autenticado',
+    }
+  }
+
+  try {
+    const result = await confirmAndImportPosicaoForUser(session.user.id, payload.lines)
+    return result
+  } catch (error) {
+    return {
+      upserted: 0,
+      skipped: 0,
+      reviewed: 0,
+      errors: [],
+      error: error instanceof Error ? error.message : 'Erro desconhecido',
+    }
   }
 }
 
@@ -288,7 +454,7 @@ export async function analyzeNegociacaoFile(formData: FormData): Promise<Analyze
     const workbook = workbookFromArrayBuffer(await file.arrayBuffer())
     const rows = sheetRowsForNegociacao(workbook)
     const parsedRows = parseNegociacao(rows)
-    const analysis = await analyzeNegociacaoRows(parsedRows)
+    const analysis = await analyzeNegociacaoRows(parsedRows, session.user.id)
 
     return serializeAnalyzeResult(analysis)
   } catch (error) {
