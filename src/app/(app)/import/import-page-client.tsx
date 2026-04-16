@@ -852,6 +852,10 @@ function downloadJsonFile(filename: string, content: unknown) {
   URL.revokeObjectURL(url)
 }
 
+function categoryLabel(category: PosicaoReviewLine['category'] | null | undefined) {
+  return category ?? 'N/A'
+}
+
 function MovimentacaoWizardCard() {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1)
   const [analysis, setAnalysis] = useState<AnalyzeMovimentacaoResponse | null>(null)
@@ -1156,21 +1160,48 @@ function PosicaoWizardCard() {
             {analysis.summary.totalRows} linha(s) analisada(s): {analysis.summary.importableRows} pronta(s), {analysis.summary.reviewRows} para revisar.
           </div>
 
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800"
+              onClick={() => downloadJsonFile('posicao-divergencias.json', analysis.exportArtifacts.divergenceFile)}
+            >
+              Baixar divergências
+            </button>
+            <button
+              type="button"
+              className="rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700"
+              onClick={() => downloadJsonFile('posicao-log-sincronizacao.json', JSON.parse(analysis.exportArtifacts.syncLog))}
+            >
+              Baixar log de sincronização
+            </button>
+          </div>
+
           <div className="max-h-80 overflow-auto rounded-lg border border-gray-200">
             <table className="min-w-full text-sm">
               <thead className="bg-gray-50 text-gray-700">
                 <tr>
+                  <th className="p-2 text-left">Status</th>
+                  <th className="p-2 text-left">Classificação</th>
+                  <th className="p-2 text-left">Motivo</th>
                   <th className="p-2 text-left">Ação</th>
-                  <th className="p-2 text-left">Ticker</th>
-                  <th className="p-2 text-left">Nome</th>
-                  <th className="p-2 text-left">Categoria</th>
-                  <th className="p-2 text-left">Instituição</th>
+                  <th className="p-2 text-left">Produto original</th>
+                  <th className="p-2 text-left">Ticker original</th>
+                  <th className="p-2 text-left">Instituição original</th>
+                  <th className="p-2 text-left">Ticker normalizado</th>
+                  <th className="p-2 text-left">Nome normalizado</th>
+                  <th className="p-2 text-left">Categoria normalizada</th>
+                  <th className="p-2 text-left">Instituição normalizada</th>
+                  <th className="p-2 text-left">Conta normalizada</th>
                   <th className="p-2 text-left">Problemas</th>
                 </tr>
               </thead>
               <tbody>
                 {lines.map((line) => (
                   <tr key={line.id} className="border-t border-gray-100 align-top">
+                    <td className="p-2 text-xs font-semibold">{line.status}</td>
+                    <td className="p-2 text-xs">{line.classification}</td>
+                    <td className="p-2 text-xs text-amber-700">{line.reason}</td>
                     <td className="p-2">
                       <select
                         className="rounded-md border border-gray-300 px-2 py-1"
@@ -1181,12 +1212,15 @@ function PosicaoWizardCard() {
                         <option value="SKIP">IGNORAR</option>
                       </select>
                     </td>
+                    <td className="p-2 text-xs">{line.original.produto || '-'}</td>
+                    <td className="p-2 text-xs">{line.original.codigoNegociacao || '-'}</td>
+                    <td className="p-2 text-xs">{line.original.instituicao || '-'}</td>
                     <td className="p-2"><input className="rounded-md border border-gray-300 px-2 py-1" value={line.ticker} onChange={(event) => updateLine(line.id, { ticker: event.target.value.toUpperCase() })} /></td>
                     <td className="p-2"><input className="rounded-md border border-gray-300 px-2 py-1" value={line.name} onChange={(event) => updateLine(line.id, { name: event.target.value })} /></td>
                     <td className="p-2">
                       <select
                         className="rounded-md border border-gray-300 px-2 py-1"
-                        value={line.category}
+                        value={categoryLabel(line.category)}
                         onChange={(event) => updateLine(line.id, { category: event.target.value as PosicaoReviewLine['category'] })}
                       >
                         <option value="STOCK">STOCK</option>
@@ -1196,6 +1230,7 @@ function PosicaoWizardCard() {
                       </select>
                     </td>
                     <td className="p-2"><input className="rounded-md border border-gray-300 px-2 py-1" value={line.instituicao} onChange={(event) => updateLine(line.id, { instituicao: event.target.value.toUpperCase() })} /></td>
+                    <td className="p-2 text-xs">{line.conta || '-'}</td>
                     <td className="p-2 text-xs text-amber-700">{line.issues.join(', ') || '-'}</td>
                   </tr>
                 ))}

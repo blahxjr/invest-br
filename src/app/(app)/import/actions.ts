@@ -23,13 +23,12 @@ import {
   type MovimentacaoReviewLine,
   type PosicaoReviewLine,
   importNegociacaoRows,
-  importPosicaoRows,
   type ImportResult,
 } from '@/modules/b3/service'
 import {
   parseMovimentacaoForReview,
   parseNegociacao,
-  parsePosicao,
+  parsePosicaoForReview,
   type RawSheet,
 } from '@/modules/b3/parser'
 import { revalidatePath } from 'next/cache'
@@ -150,6 +149,10 @@ export type ConfirmMovimentacaoResponse = ConfirmMovimentacaoResult & {
 }
 
 export type AnalyzePosicaoResponse = AnalyzePosicaoResult & {
+  exportArtifacts: {
+    divergenceFile: PosicaoReviewLine[]
+    syncLog: string
+  }
   error?: string
 }
 
@@ -295,20 +298,10 @@ export async function importMovimentacao(formData: FormData): Promise<ImportResu
  * Importa planilha de posicao da B3 para sincronizar o catalogo de ativos.
  */
 export async function importPosicao(formData: FormData): Promise<ImportResult> {
-  const session = await auth()
-  if (!session?.user?.id) {
-    return { upserted: 0, errors: ['Usuario nao autenticado'] }
-  }
-
-  try {
-    const file = await getUploadedFile(formData)
-    const workbook = workbookFromArrayBuffer(await file.arrayBuffer())
-    const parsedRows = parsePosicao(allSheets(workbook))
-
-    return importPosicaoRows(session.user.id, parsedRows)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Erro desconhecido'
-    return { upserted: 0, errors: [message] }
+  void formData
+  return {
+    upserted: 0,
+    errors: ['Fluxo direto desabilitado: use análise, revisão e confirmação de posição.'],
   }
 }
 
@@ -403,6 +396,10 @@ export async function analyzePosicaoFile(formData: FormData): Promise<AnalyzePos
   if (!session?.user?.id) {
     return {
       lines: [],
+      exportArtifacts: {
+        divergenceFile: [],
+        syncLog: JSON.stringify({ generatedAt: new Date().toISOString(), totalRows: 0, divergences: [] }),
+      },
       summary: { totalRows: 0, importableRows: 0, reviewRows: 0 },
       error: 'Usuario nao autenticado',
     }
@@ -411,11 +408,15 @@ export async function analyzePosicaoFile(formData: FormData): Promise<AnalyzePos
   try {
     const file = await getUploadedFile(formData)
     const workbook = workbookFromArrayBuffer(await file.arrayBuffer())
-    const parsedRows = parsePosicao(allSheets(workbook))
-    return await analyzePosicaoRows(parsedRows)
+    const parsedLines = parsePosicaoForReview(allSheets(workbook))
+    return await analyzePosicaoRows(parsedLines)
   } catch (error) {
     return {
       lines: [],
+      exportArtifacts: {
+        divergenceFile: [],
+        syncLog: JSON.stringify({ generatedAt: new Date().toISOString(), totalRows: 0, divergences: [] }),
+      },
       summary: { totalRows: 0, importableRows: 0, reviewRows: 0 },
       error: error instanceof Error ? error.message : 'Erro desconhecido',
     }

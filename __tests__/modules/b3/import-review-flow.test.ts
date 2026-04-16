@@ -6,7 +6,7 @@ import {
   confirmAndImportMovimentacaoForUser,
   confirmAndImportPosicaoForUser,
 } from '@/modules/b3/service'
-import { parseMovimentacaoForReview, type PosicaoRow } from '@/modules/b3/parser'
+import { parseMovimentacaoForReview, parsePosicaoForReview } from '@/modules/b3/parser'
 import { safeDeleteMany, uniqueName, uniqueSuffix, uniqueTicker } from '../../helpers/fixtures'
 
 const suiteId = uniqueSuffix()
@@ -84,30 +84,18 @@ describe('fluxo de análise/revisão/confirmacao', () => {
     const tickerInvalid = uniqueTicker('RVPX')
     createdTickers.push(tickerValid, tickerInvalid)
 
-    const rows: PosicaoRow[] = [
+    const sheets = [
       {
-        ticker: tickerValid,
-        name: `${tickerValid} TESTE`,
-        category: 'STOCK',
-        quantity: 1,
-        closePrice: 10,
-        updatedValue: 10,
-        instituicao: 'BANCO REVIEW FLOW',
-        conta: 'Conta 1',
-      },
-      {
-        ticker: tickerInvalid,
-        name: `${tickerInvalid} TESTE`,
-        category: 'STOCK',
-        quantity: 1,
-        closePrice: 10,
-        updatedValue: 10,
-        instituicao: '',
-        conta: 'Conta 2',
+        name: 'Acoes',
+        rows: [
+          ['Produto', 'Instituição', 'Conta', 'Código de Negociação', '', '', 'Tipo', '', 'Quantidade', '', '', '', 'Preço de fechamento', 'Valor atualizado'],
+          [`${tickerValid} - TESTE`, 'BANCO REVIEW FLOW', 'Conta 1', tickerValid, '', '', 'ON', '', '1', '', '', '', '10', '10'],
+          [`${tickerInvalid} - TESTE`, '', 'Conta 2', tickerInvalid, '', '', 'ON', '', '1', '', '', '', '10', '10'],
+        ],
       },
     ]
 
-    const analysis = await analyzePosicaoRows(rows)
+    const analysis = await analyzePosicaoRows(parsePosicaoForReview(sheets))
     expect(analysis.summary.totalRows).toBe(2)
     expect(analysis.summary.reviewRows).toBe(1)
 

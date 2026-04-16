@@ -10,6 +10,7 @@ import {
   type MovimentacaoReviewRow,
   type MovimentacaoRow,
   type NegociacaoRow,
+  type PosicaoParsedLine,
   type PosicaoRow,
 } from './parser'
 
@@ -162,7 +163,36 @@ export type ConfirmMovimentacaoResult = {
 export type PosicaoReviewLine = {
   id: string
   lineNumber: number
+  sheetName: string
+  status: 'OK' | 'REVISAR' | 'IGNORAR'
+  classification: 'CATALOGO_NOVO' | 'CATALOGO_EXISTENTE' | 'CONFLITO_CADASTRO' | 'DADO_INCONSISTENTE' | 'IGNORAR'
+  reason: string
   action: ReviewRowAction
+  original: {
+    produto: string
+    instituicao: string
+    conta: string
+    codigoNegociacao: string
+    tipo: string
+    quantidade: string
+    precoFechamento: string
+    valorAtualizado: string
+  }
+  normalized: {
+    ticker: string
+    name: string
+    category: PosicaoRow['category'] | null
+    quantity: number
+    closePrice: number
+    updatedValue: number
+    instituicao: string
+    conta: string
+  }
+  existingAsset?: {
+    id: string
+    name: string
+    category: AssetCategory
+  }
   ticker: string
   name: string
   category: PosicaoRow['category']
@@ -176,6 +206,10 @@ export type PosicaoReviewLine = {
 
 export type AnalyzePosicaoResult = {
   lines: PosicaoReviewLine[]
+  exportArtifacts: {
+    divergenceFile: PosicaoReviewLine[]
+    syncLog: string
+  }
   summary: {
     totalRows: number
     importableRows: number
@@ -1267,31 +1301,108 @@ export async function confirmAndImportMovimentacaoForUser(
 /**
  * Analisa posições e prepara revisão antes da persistência.
  */
-export async function analyzePosicaoRows(rows: PosicaoRow[]): Promise<AnalyzePosicaoResult> {
-  const lines: PosicaoReviewLine[] = rows.map((row, index) => {
-    const issues = validatePosicaoLine(row)
+export async function analyzePosicaoRows(parsedLines: PosicaoParsedLine[]): Promise<AnalyzePosicaoResult> {
+  const tickers = Array.from(new Set(parsedLines.map((line) => line.normalized.ticker).filter(Boolean)))
+  const existingAssets = tickers.length
+    ? await prisma.asset.findMany({
+        where: { ticker: { in: tickers } },
+        select: { id: true, ticker: true, name: true, category: true },
+      })
+    : []
+
+  const existingByTicker = new Map(
+    existingAssets
+      .filter((asset) => Boolean(asset.ticker))
+      .map((asset) => [asset.ticker as string, asset]),
+  )
+
+  const lines: PosicaoReviewLine[] = parsedLines.map((line, index) => {
+    const existing = line.normalized.ticker ? existingByTicker.get(line.normalized.ticker) : undefined
+    const issues = validatePosicaoLine({
+      ticker: line.normalized.ticker,
+      name: line.normalized.name,
+      instituicao: line.normalized.instituicao,
+    })
+
+    let status = line.status
+    let classification = line.classification
+    let reason = line.reason
+
+    if (existing) {
+      const normalizedCategory = line.normalized.category ? toDbCategory(line.normalized.category) : null
+      const hasConflict = (normalizedCategory && existing.category !== normalizedCategory)
+        || (line.normalized.name.trim() && existing.name.trim().toUpperCase() !== line.normalized.name.trim().toUpperCase())
+
+      if (hasConflict) {
+        status = 'REVISAR'
+        classification = 'CONFLITO_CADASTRO'
+        reason = 'conflito_entre_posicao_e_cadastro'
+        if (!issues.includes('conflito_cadastro')) {
+          issues.push('conflito_cadastro')
+        }
+      } else if (status === 'OK') {
+        classification = 'CATALOGO_EXISTENTE'
+        reason = 'ativo_existente_reconciliado'
+      }
+    } else if (status === 'OK') {
+      classification = 'CATALOGO_NOVO'
+      reason = 'ativo_novo_para_criacao'
+    }
+
+    const normalizedCategory = line.normalized.category ?? 'STOCK'
+
     return {
       id: `pos-${index + 1}`,
-      lineNumber: index + 1,
-      action: issues.length === 0 ? 'IMPORT' : 'SKIP',
-      ticker: row.ticker,
-      name: row.name,
-      category: row.category,
-      quantity: row.quantity,
-      closePrice: row.closePrice,
-      updatedValue: row.updatedValue,
-      instituicao: row.instituicao,
-      conta: row.conta,
+      lineNumber: line.lineNumber,
+      sheetName: line.sheetName,
+      status,
+      classification,
+      reason,
+      action: status === 'OK' && issues.length === 0 ? 'IMPORT' : 'SKIP',
+      original: line.raw,
+      normalized: line.normalized,
+      existingAsset: existing
+        ? {
+            id: existing.id,
+            name: existing.name,
+            category: existing.category,
+          }
+        : undefined,
+      ticker: line.normalized.ticker,
+      name: line.normalized.name,
+      category: normalizedCategory,
+      quantity: line.normalized.quantity,
+      closePrice: line.normalized.closePrice,
+      updatedValue: line.normalized.updatedValue,
+      instituicao: line.normalized.instituicao,
+      conta: line.normalized.conta,
       issues,
     }
   })
 
+  const divergenceFile = lines.filter((line) => line.status !== 'OK' || line.action !== 'IMPORT')
+
   return {
     lines,
+    exportArtifacts: {
+      divergenceFile,
+      syncLog: JSON.stringify({
+        generatedAt: new Date().toISOString(),
+        totalRows: lines.length,
+        divergences: divergenceFile.map((line) => ({
+          lineNumber: line.lineNumber,
+          ticker: line.ticker,
+          status: line.status,
+          classification: line.classification,
+          reason: line.reason,
+          issues: line.issues,
+        })),
+      }),
+    },
     summary: {
       totalRows: lines.length,
       importableRows: lines.filter((line) => line.action === 'IMPORT' && line.issues.length === 0).length,
-      reviewRows: lines.filter((line) => line.issues.length > 0).length,
+      reviewRows: lines.filter((line) => line.status === 'REVISAR' || line.issues.length > 0).length,
     },
   }
 }
@@ -1308,6 +1419,11 @@ export async function confirmAndImportPosicaoForUser(
   let skipped = 0
   const errors: string[] = []
   const lineAudit: Array<Record<string, unknown>> = []
+  const tickers = Array.from(new Set(lines.map((line) => line.ticker).filter(Boolean)))
+  const existingBefore = tickers.length
+    ? await prisma.asset.findMany({ where: { ticker: { in: tickers } }, select: { ticker: true } })
+    : []
+  const existingTickerSet = new Set(existingBefore.map((asset) => asset.ticker ?? '').filter(Boolean))
 
   for (const line of lines) {
     if (line.action === 'SKIP') {
@@ -1328,12 +1444,20 @@ export async function confirmAndImportPosicaoForUser(
       await resolveImportAccountForInstitution(line.instituicao, clientId, prisma)
       await upsertAssetFromImport(line.ticker, line.name, line.category)
       upserted++
-      lineAudit.push({ id: line.id, action: 'UPSERTED', ticker: line.ticker })
+      const wasExisting = existingTickerSet.has(line.ticker)
+      lineAudit.push({
+        id: line.id,
+        action: wasExisting ? 'UPDATED' : 'CREATED',
+        ticker: line.ticker,
+        classification: line.classification,
+        reason: line.reason,
+      })
+      existingTickerSet.add(line.ticker)
     } catch (error) {
       skipped++
       const message = error instanceof Error ? error.message : 'Erro desconhecido'
       errors.push(`Posicao linha ${line.lineNumber}: ${message}`)
-      lineAudit.push({ id: line.id, action: 'ERROR', error: message })
+      lineAudit.push({ id: line.id, action: 'ERROR', error: message, classification: line.classification, reason: line.reason })
     }
   }
 

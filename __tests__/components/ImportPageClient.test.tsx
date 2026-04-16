@@ -104,7 +104,14 @@ describe('ImportPageClient wizard', () => {
     vi.clearAllMocks()
     vi.spyOn(window, 'alert').mockImplementation(() => undefined)
     actionsMock.analyzeMovimentacaoFile.mockResolvedValue({ lines: [], summary: { totalRows: 0, importableRows: 0, reviewRows: 0 } })
-    actionsMock.analyzePosicaoFile.mockResolvedValue({ lines: [], summary: { totalRows: 0, importableRows: 0, reviewRows: 0 } })
+    actionsMock.analyzePosicaoFile.mockResolvedValue({
+      lines: [],
+      exportArtifacts: {
+        divergenceFile: [],
+        syncLog: '{"generatedAt":"2026-04-16T00:00:00.000Z","totalRows":0,"divergences":[]}',
+      },
+      summary: { totalRows: 0, importableRows: 0, reviewRows: 0 },
+    })
     actionsMock.confirmAndImportMovimentacao.mockResolvedValue({ imported: 0, skipped: 0, reviewed: 0, errors: [] })
     actionsMock.confirmAndImportPosicao.mockResolvedValue({ upserted: 0, skipped: 0, reviewed: 0, errors: [] })
     actionsMock.resetImportDataAction.mockResolvedValue({
@@ -345,6 +352,80 @@ describe('ImportPageClient wizard', () => {
       expect(screen.getByText('Baixar arquivo principal')).toBeInTheDocument()
       expect(screen.getByText('Baixar arquivo REVISAR')).toBeInTheDocument()
       expect(screen.getByText('Baixar log JSON')).toBeInTheDocument()
+    })
+  })
+
+  it('posição mostra preview com originais/normalizados e exportações antes de confirmar', async () => {
+    actionsMock.analyzePosicaoFile.mockResolvedValueOnce({
+      lines: [
+        {
+          id: 'pos-1',
+          lineNumber: 2,
+          sheetName: 'Acoes',
+          status: 'REVISAR',
+          classification: 'CONFLITO_CADASTRO',
+          reason: 'conflito_entre_posicao_e_cadastro',
+          action: 'SKIP',
+          original: {
+            produto: 'PETR4 - PETROBRAS',
+            instituicao: 'BTG',
+            conta: '1234',
+            codigoNegociacao: 'PETR4',
+            tipo: 'ON',
+            quantidade: '10',
+            precoFechamento: '40',
+            valorAtualizado: '400',
+          },
+          normalized: {
+            ticker: 'PETR4',
+            name: 'PETROBRAS',
+            category: 'STOCK',
+            quantity: 10,
+            closePrice: 40,
+            updatedValue: 400,
+            instituicao: 'BTG',
+            conta: '1234',
+          },
+          existingAsset: {
+            id: 'asset-1',
+            name: 'PETROBRAS PN',
+            category: 'FII',
+          },
+          ticker: 'PETR4',
+          name: 'PETROBRAS',
+          category: 'STOCK',
+          quantity: 10,
+          closePrice: 40,
+          updatedValue: 400,
+          instituicao: 'BTG',
+          conta: '1234',
+          issues: ['conflito_cadastro'],
+        },
+      ],
+      exportArtifacts: {
+        divergenceFile: [],
+        syncLog: '{"generatedAt":"2026-04-16T00:00:00.000Z","totalRows":1,"divergences":[]}',
+      },
+      summary: { totalRows: 1, importableRows: 0, reviewRows: 1 },
+    })
+
+    render(<ImportPageClient />)
+
+    const button = screen.getByRole('button', { name: 'Analisar posição' })
+    const form = button.closest('form')
+    expect(form).toBeTruthy()
+    fireEvent.submit(form as HTMLFormElement)
+
+    await waitFor(() => {
+      expect(actionsMock.analyzePosicaoFile).toHaveBeenCalledTimes(1)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('Produto original')).toBeInTheDocument()
+      expect(screen.getByText('Ticker normalizado')).toBeInTheDocument()
+      expect(screen.getByText('Instituição normalizada')).toBeInTheDocument()
+      expect(screen.getByText('Baixar divergências')).toBeInTheDocument()
+      expect(screen.getByText('Baixar log de sincronização')).toBeInTheDocument()
     })
   })
 })

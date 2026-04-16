@@ -88,6 +88,43 @@ export type PosicaoRow = {
   conta: string
 }
 
+export type PosicaoParserStatus = 'OK' | 'REVISAR' | 'IGNORAR'
+
+export type PosicaoParserClassification =
+  | 'CATALOGO_NOVO'
+  | 'CATALOGO_EXISTENTE'
+  | 'CONFLITO_CADASTRO'
+  | 'DADO_INCONSISTENTE'
+  | 'IGNORAR'
+
+export type PosicaoParsedLine = {
+  lineNumber: number
+  sheetName: string
+  status: PosicaoParserStatus
+  classification: PosicaoParserClassification
+  reason: string
+  raw: {
+    produto: string
+    instituicao: string
+    conta: string
+    codigoNegociacao: string
+    tipo: string
+    quantidade: string
+    precoFechamento: string
+    valorAtualizado: string
+  }
+  normalized: {
+    ticker: string
+    name: string
+    category: PosicaoRow['category'] | null
+    quantity: number
+    closePrice: number
+    updatedValue: number
+    instituicao: string
+    conta: string
+  }
+}
+
 export type RawSheet = {
   name: string
   rows: Array<Array<string | number | null | undefined>>
@@ -95,4 +132,4 @@ export type RawSheet = {
 
 export { inferAssetClass, parseNegociacao, parseNegociacaoRow, type InferredAssetClass } from './negociacao'
 export { parseMovimentacao, parseMovimentacaoDetailed, parseMovimentacaoForReview, parseMovimentacaoRow } from './movimentacao'
-export { parsePosicao, parsePosicaoRow } from './posicao'
+export { parsePosicao, parsePosicaoForReview, parsePosicaoRow } from './posicao'
