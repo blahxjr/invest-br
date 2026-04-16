@@ -1,4 +1,9 @@
-import type { MovimentacaoRow } from './index'
+import type {
+  MovimentacaoParsedLine,
+  MovimentacaoReviewRow,
+  MovimentacaoRow,
+  ParseMovimentacaoResult,
+} from './index'
 
 type RawRow = Array<string | number | null | undefined>
 
@@ -41,15 +46,54 @@ function normalizeMovement(value: string): string {
     .toLowerCase()
 }
 
-function getTypeFromMovement(movimentacao: string): 'BUY' | 'DIVIDEND' | null {
+function getTypeFromMovement(movimentacao: string): {
+  type: 'BUY' | 'DIVIDEND' | null
+  status: 'OK' | 'REVISAR' | 'IGNORAR'
+  classification: 'LIQUIDACAO' | 'PROVENTO' | 'EVENTO_CORPORATIVO' | 'IGNORAR' | 'REVISAR'
+  reason: string
+} {
   const normalized = normalizeMovement(movimentacao)
 
-  if (normalized === 'transferencia - liquidacao') return 'BUY'
-  if (normalized === 'rendimento') return 'DIVIDEND'
-  if (normalized === 'juros sobre capital proprio') return 'DIVIDEND'
-  if (normalized === 'dividendo') return 'DIVIDEND'
+  if (normalized === 'transferencia - liquidacao') {
+    return {
+      type: 'BUY',
+      status: 'OK',
+      classification: 'LIQUIDACAO',
+      reason: 'liquidacao_elegivel',
+    }
+  }
 
-  return null
+  if (normalized === 'rendimento' || normalized === 'juros sobre capital proprio' || normalized === 'dividendo') {
+    return {
+      type: 'DIVIDEND',
+      status: 'OK',
+      classification: 'PROVENTO',
+      reason: 'provento_elegivel',
+    }
+  }
+
+  if (
+    normalized.includes('subscricao')
+    || normalized.includes('cessao de direitos')
+    || normalized === 'atualizacao'
+    || normalized.includes('fracao')
+    || normalized.includes('resgate')
+    || normalized.includes('leilao')
+  ) {
+    return {
+      type: null,
+      status: 'REVISAR',
+      classification: 'EVENTO_CORPORATIVO',
+      reason: 'evento_corporativo_requer_revisao',
+    }
+  }
+
+  return {
+    type: null,
+    status: 'REVISAR',
+    classification: 'REVISAR',
+    reason: 'tipo_movimentacao_desconhecido',
+  }
 }
 
 function extractTicker(produto: string): string {
@@ -63,47 +107,165 @@ function buildReferenceId(dateRaw: string, ticker: string, type: 'BUY' | 'DIVIDE
   return `movimentacao-${dateKey}-${ticker}-${type}-${totalKey}`
 }
 
+function rawFromRow(row: RawRow) {
+  return {
+    entradaSaida: String(row[0] ?? '').trim(),
+    data: String(row[1] ?? '').trim(),
+    movimentacao: String(row[2] ?? '').trim(),
+    produto: String(row[3] ?? '').trim(),
+    instituicao: String(row[4] ?? '').trim(),
+    quantidade: String(row[5] ?? '').trim(),
+    precoUnitario: String(row[6] ?? '').trim(),
+    valorOperacao: String(row[7] ?? '').trim(),
+  }
+}
+
+function parseMovimentacaoRowWithReason(row: RawRow): {
+  row: MovimentacaoRow | null
+  reason: string
+  status: 'OK' | 'REVISAR' | 'IGNORAR'
+  classification: 'LIQUIDACAO' | 'PROVENTO' | 'EVENTO_CORPORATIVO' | 'IGNORAR' | 'REVISAR'
+  normalized: MovimentacaoParsedLine['normalized']
+} {
+  const raw = rawFromRow(row)
+  const parsedType = getTypeFromMovement(raw.movimentacao)
+  const date = parseDate(raw.data)
+  const ticker = extractTicker(raw.produto)
+  const quantity = parseNumberNullable(row[5]) ?? 0
+  const price = parseNumberNullable(row[6])
+  const total = parseNumberNullable(row[7])
+  const normalized: MovimentacaoParsedLine['normalized'] = {
+    date,
+    type: parsedType.type,
+    ticker,
+    instituicao: raw.instituicao.trim().toUpperCase(),
+    quantity,
+    price,
+    total,
+    referenceId: buildReferenceId(raw.data, ticker, parsedType.type ?? 'DIVIDEND', total),
+  }
+
+  if (!raw.data || !raw.movimentacao || !raw.produto) {
+    return {
+      row: null,
+      reason: 'campos_obrigatorios_ausentes',
+      status: 'IGNORAR',
+      classification: 'IGNORAR',
+      normalized,
+    }
+  }
+
+  if (!date) {
+    return {
+      row: null,
+      reason: 'data_invalida',
+      status: 'REVISAR',
+      classification: 'REVISAR',
+      normalized,
+    }
+  }
+
+  if (!parsedType.type) {
+    return {
+      row: null,
+      reason: parsedType.reason,
+      status: parsedType.status,
+      classification: parsedType.classification,
+      normalized,
+    }
+  }
+
+  if (!ticker) {
+    return {
+      row: null,
+      reason: 'ticker_ausente',
+      status: 'REVISAR',
+      classification: 'REVISAR',
+      normalized,
+    }
+  }
+
+  return {
+    row: {
+      date,
+      type: parsedType.type,
+      ticker,
+      instituicao: raw.instituicao,
+      quantity,
+      price,
+      total,
+      referenceId: buildReferenceId(raw.data, ticker, parsedType.type, total),
+    },
+    reason: parsedType.reason,
+    status: parsedType.status,
+    classification: parsedType.classification,
+    normalized,
+  }
+}
+
 /**
  * Parseia uma linha do extrato de movimentacao da B3.
  */
 export function parseMovimentacaoRow(row: RawRow): MovimentacaoRow | null {
-  const dateRaw = String(row[1] ?? '').trim()
-  const movimentacao = String(row[2] ?? '').trim()
-  const produto = String(row[3] ?? '').trim()
-  const instituicao = String(row[4] ?? '').trim()
-  const quantity = parseNumberNullable(row[5]) ?? 0
-  const price = parseNumberNullable(row[6])
-  const total = parseNumberNullable(row[7])
-
-  if (!dateRaw || !movimentacao || !produto) return null
-
-  const date = parseDate(dateRaw)
-  if (!date) return null
-
-  const type = getTypeFromMovement(movimentacao)
-  if (!type) return null
-
-  const ticker = extractTicker(produto)
-  if (!ticker) return null
-
-  return {
-    date,
-    type,
-    ticker,
-    instituicao,
-    quantity,
-    price,
-    total,
-    referenceId: buildReferenceId(dateRaw, ticker, type, total),
-  }
+  return parseMovimentacaoRowWithReason(row).row
 }
 
 /**
  * Parseia todas as linhas de movimentacao ignorando cabecalho e linhas nao suportadas.
  */
 export function parseMovimentacao(rows: RawRow[]): MovimentacaoRow[] {
+  return parseMovimentacaoDetailed(rows).readyRows
+}
+
+/**
+ * Parseia movimentacao retornando linhas prontas e linhas a revisar.
+ */
+export function parseMovimentacaoDetailed(rows: RawRow[]): ParseMovimentacaoResult {
+  const parsedLines = parseMovimentacaoForReview(rows)
+  const readyRows: MovimentacaoRow[] = []
+  const reviewRows: MovimentacaoReviewRow[] = []
+
+  parsedLines.forEach((line) => {
+    if (line.status === 'OK' && line.normalized.type) {
+      readyRows.push({
+        date: line.normalized.date ?? new Date(),
+        type: line.normalized.type,
+        ticker: line.normalized.ticker,
+        instituicao: line.normalized.instituicao,
+        quantity: line.normalized.quantity,
+        price: line.normalized.price,
+        total: line.normalized.total,
+        referenceId: line.normalized.referenceId,
+      })
+      return
+    }
+
+    reviewRows.push({
+      lineNumber: line.lineNumber,
+      reason: line.reason,
+      raw: line.raw,
+    })
+  })
+
+  return { readyRows, reviewRows }
+}
+
+/**
+ * Parseia movimentação preservando todas as linhas para revisão.
+ */
+export function parseMovimentacaoForReview(rows: RawRow[]): MovimentacaoParsedLine[] {
   return rows
-    .filter((row) => String(row[0] ?? '').trim() !== 'Entrada/Saída')
-    .map(parseMovimentacaoRow)
-    .filter((row): row is MovimentacaoRow => row !== null)
+    .map((row, index) => ({ row, lineNumber: index + 1 }))
+    .filter(({ row }) => String(row[0] ?? '').trim() !== 'Entrada/Saída')
+    .map(({ row, lineNumber }) => {
+      const parsed = parseMovimentacaoRowWithReason(row)
+      return {
+        lineNumber: lineNumber + 1,
+        status: parsed.status,
+        classification: parsed.classification,
+        reason: parsed.reason,
+        raw: rawFromRow(row),
+        normalized: parsed.normalized,
+      }
+    })
 }

@@ -842,6 +842,16 @@ function toDateInputValue(value: string) {
   return value.slice(0, 10)
 }
 
+function downloadJsonFile(filename: string, content: unknown) {
+  const blob = new Blob([JSON.stringify(content, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
 function MovimentacaoWizardCard() {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1)
   const [analysis, setAnalysis] = useState<AnalyzeMovimentacaoResponse | null>(null)
@@ -920,23 +930,56 @@ function MovimentacaoWizardCard() {
             {analysis.summary.totalRows} linha(s) analisada(s): {analysis.summary.importableRows} pronta(s), {analysis.summary.reviewRows} para revisar.
           </div>
 
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700"
+              onClick={() => downloadJsonFile('movimentacao-principal.json', analysis.exportArtifacts.mainFile)}
+            >
+              Baixar arquivo principal
+            </button>
+            <button
+              type="button"
+              className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800"
+              onClick={() => downloadJsonFile('movimentacao-revisar.json', analysis.exportArtifacts.reviewFile)}
+            >
+              Baixar arquivo REVISAR
+            </button>
+            <button
+              type="button"
+              className="rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700"
+              onClick={() => downloadJsonFile('movimentacao-log-decisoes.json', JSON.parse(analysis.exportArtifacts.decisionLog))}
+            >
+              Baixar log JSON
+            </button>
+          </div>
+
           <div className="max-h-80 overflow-auto rounded-lg border border-gray-200">
             <table className="min-w-full text-sm">
               <thead className="bg-gray-50 text-gray-700">
                 <tr>
+                  <th className="p-2 text-left">Status</th>
+                  <th className="p-2 text-left">Classificação</th>
+                  <th className="p-2 text-left">Motivo</th>
                   <th className="p-2 text-left">Ação</th>
-                  <th className="p-2 text-left">Data</th>
-                  <th className="p-2 text-left">Tipo</th>
-                  <th className="p-2 text-left">Ticker</th>
-                  <th className="p-2 text-left">Instituição</th>
-                  <th className="p-2 text-left">Qtd</th>
-                  <th className="p-2 text-left">Total</th>
-                  <th className="p-2 text-left">Problemas</th>
+                  <th className="p-2 text-left">Data original</th>
+                  <th className="p-2 text-left">Movimentação original</th>
+                  <th className="p-2 text-left">Produto original</th>
+                  <th className="p-2 text-left">Instituição original</th>
+                  <th className="p-2 text-left">Data normalizada</th>
+                  <th className="p-2 text-left">Tipo normalizado</th>
+                  <th className="p-2 text-left">Ticker normalizado</th>
+                  <th className="p-2 text-left">Instituição normalizada</th>
+                  <th className="p-2 text-left">Qtd normalizada</th>
+                  <th className="p-2 text-left">Total normalizado</th>
                 </tr>
               </thead>
               <tbody>
                 {lines.map((line) => (
                   <tr key={line.id} className="border-t border-gray-100 align-top">
+                    <td className="p-2 text-xs font-semibold">{line.status}</td>
+                    <td className="p-2 text-xs">{line.classification}</td>
+                    <td className="p-2 text-xs text-amber-700">{line.reason}</td>
                     <td className="p-2">
                       <select
                         className="rounded-md border border-gray-300 px-2 py-1"
@@ -947,6 +990,10 @@ function MovimentacaoWizardCard() {
                         <option value="SKIP">IGNORAR</option>
                       </select>
                     </td>
+                    <td className="p-2 text-xs">{line.original.data || '-'}</td>
+                    <td className="p-2 text-xs">{line.original.movimentacao || '-'}</td>
+                    <td className="p-2 text-xs">{line.original.produto || '-'}</td>
+                    <td className="p-2 text-xs">{line.original.instituicao || '-'}</td>
                     <td className="p-2">
                       <input
                         type="date"
@@ -987,7 +1034,6 @@ function MovimentacaoWizardCard() {
                         onChange={(event) => updateLine(line.id, { total: Number(event.target.value) })}
                       />
                     </td>
-                    <td className="p-2 text-xs text-amber-700">{line.issues.join(', ') || '-'}</td>
                   </tr>
                 ))}
               </tbody>

@@ -6,7 +6,7 @@ import {
   confirmAndImportMovimentacaoForUser,
   confirmAndImportPosicaoForUser,
 } from '@/modules/b3/service'
-import type { MovimentacaoRow, MovimentacaoReviewRow, PosicaoRow } from '@/modules/b3/parser'
+import { parseMovimentacaoForReview, type PosicaoRow } from '@/modules/b3/parser'
 import { safeDeleteMany, uniqueName, uniqueSuffix, uniqueTicker } from '../../helpers/fixtures'
 
 const suiteId = uniqueSuffix()
@@ -63,37 +63,13 @@ describe('fluxo de análise/revisão/confirmacao', () => {
     const ticker = uniqueTicker('RVMO')
     createdTickers.push(ticker)
 
-    const readyRows: MovimentacaoRow[] = [
-      {
-        date: new Date('2026-04-16T00:00:00.000Z'),
-        type: 'DIVIDEND',
-        ticker,
-        instituicao: 'CORRETORA REVIEW FLOW S.A.',
-        quantity: 10,
-        price: 1,
-        total: 10,
-        referenceId: `ref-${ticker}-1`,
-      },
+    const rawRows = [
+      ['Entrada/Saída', 'Data', 'Movimentação', 'Produto', 'Instituição', 'Quantidade', 'Preço unitário', 'Valor da Operação'],
+      ['Credito', '16/04/2026', 'Dividendo', `${ticker} - TESTE`, 'CORRETORA REVIEW FLOW S.A.', '10', '1', '10'],
+      ['Credito', '16/04/2026', 'Evento não suportado', 'AAAA11 - TESTE', '', '0', '-', '-'],
     ]
 
-    const parserReviewRows: MovimentacaoReviewRow[] = [
-      {
-        lineNumber: 77,
-        reason: 'tipo_movimentacao_desconhecido',
-        raw: {
-          entradaSaida: 'Credito',
-          data: '16/04/2026',
-          movimentacao: 'Evento não suportado',
-          produto: 'AAAA11 - TESTE',
-          instituicao: '',
-          quantidade: '0',
-          precoUnitario: '-',
-          valorOperacao: '-',
-        },
-      },
-    ]
-
-    const analysis = await analyzeMovimentacaoRows(readyRows, parserReviewRows)
+    const analysis = await analyzeMovimentacaoRows(parseMovimentacaoForReview(rawRows))
     expect(analysis.summary.totalRows).toBe(2)
     expect(analysis.summary.reviewRows).toBeGreaterThan(0)
 

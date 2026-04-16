@@ -275,4 +275,76 @@ describe('ImportPageClient wizard', () => {
     expect(screen.getByRole('button', { name: 'Analisar movimentação' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Analisar posição' })).toBeInTheDocument()
   })
+
+  it('movimentação mostra preview com status e exportações antes de confirmar', async () => {
+    actionsMock.analyzeMovimentacaoFile.mockResolvedValueOnce({
+      lines: [
+        {
+          id: 'mov-1',
+          lineNumber: 2,
+          status: 'REVISAR',
+          classification: 'EVENTO_CORPORATIVO',
+          reason: 'evento_corporativo_requer_revisao',
+          action: 'SKIP',
+          referenceId: 'mov-ref-1',
+          original: {
+            entradaSaida: 'Credito',
+            data: '06/04/2026',
+            movimentacao: 'Direitos de Subscrição',
+            produto: 'PETR4 - PETROBRAS',
+            instituicao: 'BTG',
+            quantidade: '10',
+            precoUnitario: '-',
+            valorOperacao: '-',
+          },
+          normalized: {
+            date: '2026-04-06T00:00:00.000Z',
+            type: null,
+            ticker: 'PETR4',
+            instituicao: 'BTG',
+            quantity: 10,
+            price: null,
+            total: null,
+            referenceId: 'mov-ref-1',
+          },
+          date: '2026-04-06T00:00:00.000Z',
+          type: 'DIVIDEND',
+          ticker: 'PETR4',
+          instituicao: 'BTG',
+          quantity: 10,
+          price: null,
+          total: null,
+          issues: ['evento_corporativo_requer_revisao'],
+        },
+      ],
+      exportArtifacts: {
+        mainFile: [],
+        reviewFile: [],
+        decisionLog: '{"generatedAt":"2026-04-16T00:00:00.000Z","totalRows":1,"decisions":[]}',
+      },
+      summary: { totalRows: 1, importableRows: 0, reviewRows: 1 },
+    })
+
+    render(<ImportPageClient />)
+
+    const button = screen.getByRole('button', { name: 'Analisar movimentação' })
+    const form = button.closest('form')
+    expect(form).toBeTruthy()
+    fireEvent.submit(form as HTMLFormElement)
+
+    await waitFor(() => {
+      expect(actionsMock.analyzeMovimentacaoFile).toHaveBeenCalledTimes(1)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('Status')).toBeInTheDocument()
+      expect(screen.getByText('Classificação')).toBeInTheDocument()
+      expect(screen.getByText('Motivo')).toBeInTheDocument()
+      expect(screen.getByText('Data original')).toBeInTheDocument()
+      expect(screen.getByText('Tipo normalizado')).toBeInTheDocument()
+      expect(screen.getByText('Baixar arquivo principal')).toBeInTheDocument()
+      expect(screen.getByText('Baixar arquivo REVISAR')).toBeInTheDocument()
+      expect(screen.getByText('Baixar log JSON')).toBeInTheDocument()
+    })
+  })
 })

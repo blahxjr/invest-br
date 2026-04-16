@@ -3,7 +3,15 @@ import { createHash } from 'node:crypto'
 import { prisma } from '@/lib/prisma'
 import * as positionsService from '@/modules/positions/service'
 import { createTransaction } from '@/modules/transactions/service'
-import { inferAssetClass, type InferredAssetClass, type MovimentacaoReviewRow, type MovimentacaoRow, type NegociacaoRow, type PosicaoRow } from './parser'
+import {
+  inferAssetClass,
+  type InferredAssetClass,
+  type MovimentacaoParsedLine,
+  type MovimentacaoReviewRow,
+  type MovimentacaoRow,
+  type NegociacaoRow,
+  type PosicaoRow,
+} from './parser'
 
 export type ImportResult = {
   imported?: number
@@ -95,10 +103,31 @@ export type ReviewRowAction = 'IMPORT' | 'SKIP'
 export type MovimentacaoReviewLine = {
   id: string
   lineNumber: number
-  source: 'READY' | 'REVISAR'
-  reviewReason?: string
+  status: 'OK' | 'REVISAR' | 'IGNORAR'
+  classification: 'LIQUIDACAO' | 'PROVENTO' | 'EVENTO_CORPORATIVO' | 'IGNORAR' | 'REVISAR'
+  reason: string
   action: ReviewRowAction
   referenceId: string
+  original: {
+    entradaSaida: string
+    data: string
+    movimentacao: string
+    produto: string
+    instituicao: string
+    quantidade: string
+    precoUnitario: string
+    valorOperacao: string
+  }
+  normalized: {
+    date: Date | null
+    type: 'BUY' | 'DIVIDEND' | null
+    ticker: string
+    instituicao: string
+    quantity: number
+    price: number | null
+    total: number | null
+    referenceId: string
+  }
   date: Date
   type: 'BUY' | 'DIVIDEND'
   ticker: string
@@ -111,6 +140,11 @@ export type MovimentacaoReviewLine = {
 
 export type AnalyzeMovimentacaoResult = {
   lines: MovimentacaoReviewLine[]
+  exportArtifacts: {
+    mainFile: MovimentacaoReviewLine[]
+    reviewFile: MovimentacaoReviewLine[]
+    decisionLog: string
+  }
   summary: {
     totalRows: number
     importableRows: number
@@ -1066,65 +1100,69 @@ function extractTickerFromProduto(raw: string): string {
  * Analisa movimentações e prepara linhas para revisão antes da persistência.
  */
 export async function analyzeMovimentacaoRows(
-  rows: MovimentacaoRow[],
-  parserReviewRows: MovimentacaoReviewRow[] = [],
+  parsedLines: MovimentacaoParsedLine[],
 ): Promise<AnalyzeMovimentacaoResult> {
-  const readyLines: MovimentacaoReviewLine[] = rows.map((row, index) => {
-    const issues = validateMovimentacaoLine(row)
+  const lines: MovimentacaoReviewLine[] = parsedLines.map((line, index) => {
+    const normalizedCandidate = {
+      ticker: line.normalized.ticker,
+      instituicao: line.normalized.instituicao,
+      quantity: line.normalized.quantity,
+      total: line.normalized.total,
+    }
+    const issues = line.status === 'OK'
+      ? validateMovimentacaoLine(normalizedCandidate)
+      : [line.reason, ...validateMovimentacaoLine(normalizedCandidate)]
+
+    const normalizedDate = line.normalized.date ?? parsePtBrDate(line.raw.data)
+    const normalizedType = line.normalized.type ?? (line.raw.movimentacao.toLowerCase().includes('transfer') ? 'BUY' : 'DIVIDEND')
+
     return {
-      id: `mov-ready-${index + 1}`,
-      lineNumber: index + 1,
-      source: 'READY',
-      action: issues.length === 0 ? 'IMPORT' : 'SKIP',
-      referenceId: row.referenceId,
-      date: row.date,
-      type: row.type,
-      ticker: row.ticker,
-      instituicao: row.instituicao,
-      quantity: row.quantity,
-      price: row.price,
-      total: row.total,
+      id: `mov-${index + 1}`,
+      lineNumber: line.lineNumber,
+      status: line.status,
+      classification: line.classification,
+      reason: line.reason,
+      action: line.status === 'OK' && issues.length === 0 ? 'IMPORT' : 'SKIP',
+      referenceId: line.normalized.referenceId,
+      original: line.raw,
+      normalized: line.normalized,
+      date: normalizedDate,
+      type: normalizedType,
+      ticker: line.normalized.ticker,
+      instituicao: line.normalized.instituicao,
+      quantity: line.normalized.quantity,
+      price: line.normalized.price,
+      total: line.normalized.total,
       issues,
     }
   })
 
-  const reviewLines: MovimentacaoReviewLine[] = parserReviewRows.map((row, index) => {
-    const type = row.raw.movimentacao.toLowerCase().includes('transfer') ? 'BUY' : 'DIVIDEND'
-    const normalizedLine = {
-      ticker: extractTickerFromProduto(row.raw.produto),
-      instituicao: (row.raw.instituicao ?? '').trim().toUpperCase(),
-      quantity: parsePtBrNumber(row.raw.quantidade),
-      total: parsePtBrNumber(row.raw.valorOperacao),
-    }
-
-    const issues = [`parser_${row.reason}`, ...validateMovimentacaoLine(normalizedLine)]
-
-    return {
-      id: `mov-review-${index + 1}`,
-      lineNumber: row.lineNumber,
-      source: 'REVISAR',
-      reviewReason: row.reason,
-      action: 'SKIP',
-      referenceId: `review-${row.lineNumber}-${index + 1}`,
-      date: parsePtBrDate(row.raw.data),
-      type,
-      ticker: normalizedLine.ticker,
-      instituicao: normalizedLine.instituicao,
-      quantity: normalizedLine.quantity,
-      price: parsePtBrNumber(row.raw.precoUnitario),
-      total: normalizedLine.total,
-      issues,
-    }
-  })
-
-  const lines = [...readyLines, ...reviewLines]
+  const mainFile = lines.filter((line) => line.action === 'IMPORT')
+  const reviewFile = lines.filter((line) => line.action !== 'IMPORT' || line.status !== 'OK')
 
   return {
     lines,
+    exportArtifacts: {
+      mainFile,
+      reviewFile,
+      decisionLog: JSON.stringify({
+        generatedAt: new Date().toISOString(),
+        totalRows: lines.length,
+        decisions: lines.map((line) => ({
+          lineNumber: line.lineNumber,
+          action: line.action,
+          status: line.status,
+          classification: line.classification,
+          reason: line.reason,
+          issues: line.issues,
+          referenceId: line.referenceId,
+        })),
+      }),
+    },
     summary: {
       totalRows: lines.length,
       importableRows: lines.filter((line) => line.action === 'IMPORT' && line.issues.length === 0).length,
-      reviewRows: lines.filter((line) => line.source === 'REVISAR' || line.issues.length > 0).length,
+      reviewRows: lines.filter((line) => line.status === 'REVISAR' || line.issues.length > 0).length,
     },
   }
 }
@@ -1146,7 +1184,7 @@ export async function confirmAndImportMovimentacaoForUser(
   for (const line of lines) {
     if (line.action === 'SKIP') {
       skipped++
-      lineAudit.push({ id: line.id, action: 'SKIP', issues: line.issues, source: line.source })
+      lineAudit.push({ id: line.id, action: 'SKIP', issues: line.issues, status: line.status, reason: line.reason })
       continue
     }
 
@@ -1154,7 +1192,7 @@ export async function confirmAndImportMovimentacaoForUser(
     if (issues.length > 0) {
       skipped++
       errors.push(`Movimentacao linha ${line.lineNumber}: ${issues.join(', ')}`)
-      lineAudit.push({ id: line.id, action: 'SKIP_INVALID', issues, source: line.source })
+      lineAudit.push({ id: line.id, action: 'SKIP_INVALID', issues, status: line.status, reason: line.reason })
       continue
     }
 

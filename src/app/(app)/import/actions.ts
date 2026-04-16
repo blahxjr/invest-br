@@ -22,13 +22,12 @@ import {
   type MissingClass,
   type MovimentacaoReviewLine,
   type PosicaoReviewLine,
-  importMovimentacaoRows,
   importNegociacaoRows,
   importPosicaoRows,
   type ImportResult,
 } from '@/modules/b3/service'
 import {
-  parseMovimentacaoDetailed,
+  parseMovimentacaoForReview,
   parseNegociacao,
   parsePosicao,
   type RawSheet,
@@ -125,12 +124,20 @@ export type ConfirmImportResponse = ConfirmImportResult & {
   error?: string
 }
 
-export type SerializableMovimentacaoLine = Omit<MovimentacaoReviewLine, 'date'> & {
+export type SerializableMovimentacaoLine = Omit<MovimentacaoReviewLine, 'date' | 'normalized'> & {
   date: string
+  normalized: Omit<MovimentacaoReviewLine['normalized'], 'date'> & {
+    date: string | null
+  }
 }
 
 export type AnalyzeMovimentacaoResponse = AnalyzeMovimentacaoResult & {
   lines: SerializableMovimentacaoLine[]
+  exportArtifacts: {
+    mainFile: SerializableMovimentacaoLine[]
+    reviewFile: SerializableMovimentacaoLine[]
+    decisionLog: string
+  }
   error?: string
 }
 
@@ -243,6 +250,10 @@ function toMovimentacaoLines(lines: SerializableMovimentacaoLine[]): Movimentaca
   return lines.map((line) => ({
     ...line,
     date: new Date(line.date),
+    normalized: {
+      ...line.normalized,
+      date: line.normalized.date ? new Date(line.normalized.date) : null,
+    },
   }))
 }
 
@@ -272,21 +283,11 @@ export async function importNegociacao(formData: FormData): Promise<ImportResult
  * Importa planilha de movimentacao da B3.
  */
 export async function importMovimentacao(formData: FormData): Promise<ImportResult> {
-  const session = await auth()
-  if (!session?.user?.id) {
-    return { imported: 0, skipped: 0, errors: ['Usuario nao autenticado'] }
-  }
-
-  try {
-    const file = await getUploadedFile(formData)
-    const workbook = workbookFromArrayBuffer(await file.arrayBuffer())
-    const rows = sheetRows(workbook, 'Movimentação')
-    const parsed = parseMovimentacaoDetailed(rows)
-
-    return importMovimentacaoRows(session.user.id, parsed.readyRows, parsed.reviewRows)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Erro desconhecido'
-    return { imported: 0, skipped: 0, errors: [message] }
+  void formData
+  return {
+    imported: 0,
+    skipped: 0,
+    errors: ['Fluxo direto desabilitado: use análise, revisão e confirmação de movimentação.'],
   }
 }
 
@@ -328,16 +329,35 @@ export async function analyzeMovimentacaoFile(formData: FormData): Promise<Analy
     const file = await getUploadedFile(formData)
     const workbook = workbookFromArrayBuffer(await file.arrayBuffer())
     const rows = sheetRows(workbook, 'Movimentação')
-    const parsed = parseMovimentacaoDetailed(rows)
-    const result = await analyzeMovimentacaoRows(parsed.readyRows, parsed.reviewRows)
+    const parsedLines = parseMovimentacaoForReview(rows)
+    const result = await analyzeMovimentacaoRows(parsedLines)
+
+    const serializeLine = (line: AnalyzeMovimentacaoResult['lines'][number]): SerializableMovimentacaoLine => ({
+      ...line,
+      date: line.date.toISOString(),
+      normalized: {
+        ...line.normalized,
+        date: line.normalized.date?.toISOString() ?? null,
+      },
+    })
 
     return {
       ...result,
-      lines: result.lines.map((line) => ({ ...line, date: line.date.toISOString() })),
+      lines: result.lines.map(serializeLine),
+      exportArtifacts: {
+        mainFile: result.exportArtifacts.mainFile.map(serializeLine),
+        reviewFile: result.exportArtifacts.reviewFile.map(serializeLine),
+        decisionLog: result.exportArtifacts.decisionLog,
+      },
     }
   } catch (error) {
     return {
       lines: [],
+      exportArtifacts: {
+        mainFile: [],
+        reviewFile: [],
+        decisionLog: JSON.stringify({ generatedAt: new Date().toISOString(), totalRows: 0, decisions: [] }),
+      },
       summary: { totalRows: 0, importableRows: 0, reviewRows: 0 },
       error: error instanceof Error ? error.message : 'Erro desconhecido',
     }
