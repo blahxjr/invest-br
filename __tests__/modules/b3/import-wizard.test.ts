@@ -96,14 +96,23 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
+  const clientAccounts = await prisma.account.findMany({
+    where: { clientId },
+    select: { id: true, institutionId: true },
+  })
+
+  const accountIds = clientAccounts.map((item) => item.id)
+
   await safeDeleteMany(prisma.auditLog, { changedBy: userId })
-  await safeDeleteMany(prisma.ledgerEntry, { accountId })
-  await safeDeleteMany(prisma.transaction, { accountId })
+  if (accountIds.length > 0) {
+    await safeDeleteMany(prisma.ledgerEntry, { accountId: { in: accountIds } })
+    await safeDeleteMany(prisma.transaction, { accountId: { in: accountIds } })
+  }
   await safeDeleteMany(prisma.asset, { ticker: { in: createdTickers } })
   await safeDeleteMany(prisma.assetClass, { code: customClassCode })
-  await safeDeleteMany(prisma.account, { id: accountId })
-  await safeDeleteMany(prisma.client, { id: clientId })
+  await safeDeleteMany(prisma.account, { clientId })
   await safeDeleteMany(prisma.institution, { id: institutionId })
+  await safeDeleteMany(prisma.client, { id: clientId })
   await safeDeleteMany(prisma.portfolio, { id: portfolioId })
   await safeDeleteMany(prisma.user, { id: userId })
   await prisma.$disconnect()
@@ -170,7 +179,7 @@ describe('confirmAndImportNegociacaoForUser', () => {
     const createdClass = await prisma.assetClass.findUnique({ where: { code: customClassCode } })
     const asset = await prisma.asset.findUnique({ where: { ticker } })
     const transaction = await prisma.transaction.findFirst({
-      where: { accountId, assetId: asset?.id ?? '' },
+      where: { assetId: asset?.id ?? '' },
       orderBy: { createdAt: 'desc' },
     })
 

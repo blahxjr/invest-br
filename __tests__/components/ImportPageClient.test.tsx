@@ -72,6 +72,15 @@ function buildAnalyzeResponse() {
     existingAssets: [
       { id: 'asset-existing', ticker: 'HGLG11', name: 'CSHG Logística', className: 'Fundos Imobiliários' },
     ],
+    institutionPreviews: [
+      {
+        normalizedName: 'NU INVEST CORRETORA DE VALORES S.A.',
+        displayName: 'Nu Invest',
+        inferredType: 'Corretora',
+        isNew: true,
+        rowCount: 1,
+      },
+    ],
     summary: {
       totalRows: 2,
       readyCount: 1,
@@ -88,6 +97,8 @@ describe('ImportPageClient wizard', () => {
     actionsMock.importPosicao.mockResolvedValue({ upserted: 0, errors: [] })
     actionsMock.confirmAndImportNegociacao.mockResolvedValue({
       assetsCreated: 1,
+      institutionsCreated: 1,
+      accountsCreated: 1,
       transactionsImported: 2,
       transactionsSkipped: 0,
     })
@@ -175,7 +186,7 @@ describe('ImportPageClient wizard', () => {
   it('botao Confirmar e Importar fica desabilitado durante loading', async () => {
     actionsMock.analyzeNegociacaoFile.mockResolvedValueOnce(buildAnalyzeResponse())
 
-    let resolveImport: ((value: { assetsCreated: number; transactionsImported: number; transactionsSkipped: number }) => void) | undefined
+    let resolveImport: ((value: { assetsCreated: number; institutionsCreated: number; accountsCreated: number; transactionsImported: number; transactionsSkipped: number }) => void) | undefined
     actionsMock.confirmAndImportNegociacao.mockReturnValue(
       new Promise((resolve) => {
         resolveImport = resolve
@@ -194,7 +205,7 @@ describe('ImportPageClient wizard', () => {
     })
 
     await act(async () => {
-      resolveImport?.({ assetsCreated: 1, transactionsImported: 1, transactionsSkipped: 0 })
+      resolveImport?.({ assetsCreated: 1, institutionsCreated: 1, accountsCreated: 1, transactionsImported: 1, transactionsSkipped: 0 })
     })
   })
 })

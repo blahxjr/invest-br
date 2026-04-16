@@ -16,6 +16,10 @@ const typeLabels: Record<string, string> = {
   CRYPTO_WALLET: 'Cripto',
   REAL_ESTATE: 'Imóveis',
   MANUAL: 'Manual',
+  BROKER: 'Corretora',
+  CRYPTO_EXCHANGE: 'Exchange',
+  REAL_ESTATE_FUND: 'Fundo Imobiliário',
+  OTHER: 'Outro',
 }
 
 function formatCurrency(value: number) {

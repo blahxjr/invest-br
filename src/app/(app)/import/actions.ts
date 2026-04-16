@@ -9,6 +9,7 @@ import {
   type ConfirmImportResult,
   type ExistingAssetOption,
   type ImportPayload,
+  type InstitutionPreview,
   type MissingClass,
   importMovimentacaoRows,
   importNegociacaoRows,
@@ -87,6 +88,7 @@ export type AnalyzeNegociacaoResponse = {
   missingClasses: SerializableMissingClass[]
   availableClasses: SerializableAssetClassOption[]
   existingAssets: SerializableAssetOption[]
+  institutionPreviews: InstitutionPreview[]
   summary: {
     totalRows: number
     readyCount: number
@@ -257,6 +259,7 @@ export async function analyzeNegociacaoFile(formData: FormData): Promise<Analyze
       missingClasses: [],
       availableClasses: [],
       existingAssets: [],
+      institutionPreviews: [],
       summary: { totalRows: 0, readyCount: 0, unresolvedCount: 0, uniqueUnresolvedTickers: [] },
       error: 'Usuario nao autenticado',
     }
@@ -278,6 +281,7 @@ export async function analyzeNegociacaoFile(formData: FormData): Promise<Analyze
       missingClasses: [],
       availableClasses: [],
       existingAssets: [],
+      institutionPreviews: [],
       summary: { totalRows: 0, readyCount: 0, unresolvedCount: 0, uniqueUnresolvedTickers: [] },
       error: message,
     }
@@ -292,6 +296,8 @@ export async function confirmAndImportNegociacao(payload: ConfirmImportPayload):
   if (!session?.user?.id) {
     return {
       assetsCreated: 0,
+      institutionsCreated: 0,
+      accountsCreated: 0,
       transactionsImported: 0,
       transactionsSkipped: 0,
       error: 'Usuario nao autenticado',
@@ -305,6 +311,8 @@ export async function confirmAndImportNegociacao(payload: ConfirmImportPayload):
     const message = error instanceof Error ? error.message : 'Erro desconhecido'
     return {
       assetsCreated: 0,
+      institutionsCreated: 0,
+      accountsCreated: 0,
       transactionsImported: 0,
       transactionsSkipped: 0,
       error: message,

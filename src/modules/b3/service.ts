@@ -1,4 +1,4 @@
-import { AssetCategory, Prisma } from '@prisma/client'
+import { AccountType, AssetCategory, InstitutionType, Prisma } from '@prisma/client'
 import { createHash } from 'node:crypto'
 import { prisma } from '@/lib/prisma'
 import * as positionsService from '@/modules/positions/service'
@@ -67,6 +67,7 @@ export type AnalyzeNegociacaoResult = ParsedNegociacaoResult & {
   missingClasses: MissingClass[]
   availableClasses: AssetClassOption[]
   existingAssets: ExistingAssetOption[]
+  institutionPreviews: InstitutionPreview[]
   summary: AnalyzeNegociacaoSummary
 }
 
@@ -83,11 +84,22 @@ export type ImportPayload = {
 
 export type ConfirmImportResult = {
   assetsCreated: number
+  institutionsCreated: number
+  accountsCreated: number
   transactionsImported: number
   transactionsSkipped: number
 }
 
+export type InstitutionPreview = {
+  normalizedName: string
+  displayName: string
+  inferredType: 'Corretora' | 'Banco' | 'Exchange' | 'Outra'
+  isNew: boolean
+  rowCount: number
+}
+
 type DbCategory = AssetCategory
+type TxClient = Omit<typeof prisma, '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends'>
 
 const CLASS_SUGGESTIONS: Record<string, { name: string; description: string; code: string }> = {
   FII: { name: 'Fundos Imobiliários', description: 'FIIs negociados na B3', code: 'FII' },
@@ -121,6 +133,73 @@ function toDbCategoryFromClassCode(code: string): DbCategory {
   if (normalized === 'ETF') return AssetCategory.ETF
   if (normalized === 'RENDA_FIXA') return AssetCategory.FIXED_INCOME
   return AssetCategory.STOCK
+}
+
+/**
+ * Normaliza o nome da instituição para comparação e upsert.
+ */
+export function normalizeInstitutionName(raw: string): string {
+  const trimmed = raw.trim().toUpperCase()
+  if (!trimmed) {
+    throw new Error('Nome de instituição vazio')
+  }
+  return trimmed
+}
+
+/**
+ * Infere o tipo da instituição com base no nome informado.
+ */
+export function inferInstitutionType(name: string): InstitutionType {
+  const upper = name.toUpperCase()
+
+  if (
+    upper.includes('CRYPTO') || upper.includes('CRIPTO')
+    || upper.includes('BINANCE') || upper.includes('MERCADO BITCOIN')
+    || upper.includes('FOXBIT')
+  ) return InstitutionType.CRYPTO_EXCHANGE
+
+  if (
+    upper.includes('BANCO') || upper.includes('BANK')
+    || upper.includes('CAIXA') || upper.includes('BRADESCO')
+    || upper.includes('ITAU') || upper.includes('SANTANDER')
+    || upper.includes('BB ') || upper.includes('NUBANK')
+  ) return InstitutionType.BANK
+
+  if (
+    upper.includes('CORRETORA') || upper.includes('INVEST')
+    || upper.includes('INVESTIMENTOS') || upper.includes('VALORES')
+    || upper.includes('BROKER') || upper.includes('DTVM')
+    || upper.includes('RICO') || upper.includes('CLEAR')
+    || upper.includes('INTER') || upper.includes('TORO')
+  ) return InstitutionType.BROKER
+
+  return InstitutionType.OTHER
+}
+
+/**
+ * Gera um nome amigável para a conta com base no nome da instituição.
+ */
+export function buildAccountName(institutionName: string): string {
+  const stopWords = new Set([
+    'DE', 'DA', 'DO', 'DAS', 'DOS', 'S.A.', 'S/A', 'LTDA', 'SA',
+    'CORRETORA', 'VALORES', 'DISTRIBUIDORA',
+    'TITULOS', 'MOBILIARIOS', 'MOBILIÁRIOS',
+  ])
+
+  const words = institutionName
+    .split(/\s+/)
+    .filter((word) => word.length > 1 && !stopWords.has(word.toUpperCase()))
+    .slice(0, 2)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+
+  return words.join(' ') || institutionName.slice(0, 30)
+}
+
+function institutionTypeToPtBr(type: InstitutionType): InstitutionPreview['inferredType'] {
+  if (type === InstitutionType.BROKER) return 'Corretora'
+  if (type === InstitutionType.BANK) return 'Banco'
+  if (type === InstitutionType.CRYPTO_EXCHANGE) return 'Exchange'
+  return 'Outra'
 }
 
 function toAssetClassCode(inferred: InferredAssetClass | null): string | null {
@@ -212,6 +291,71 @@ export async function getDefaultAccountForUser(userId: string): Promise<string> 
 }
 
 /**
+ * Busca o cliente padrão do usuário para vincular contas criadas via importação.
+ */
+export async function getClientForUser(userId: string): Promise<string> {
+  const client = await prisma.client.findFirst({
+    where: { userId },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true },
+  })
+
+  if (!client) {
+    throw new Error('Nenhum cliente encontrado para o usuário autenticado')
+  }
+
+  return client.id
+}
+
+/**
+ * Garante a existência de uma instituição pelo nome normalizado.
+ */
+export async function upsertInstitution(name: string, tx: TxClient): Promise<string> {
+  const normalized = normalizeInstitutionName(name)
+  const existing = await tx.institution.findFirst({
+    where: { name: normalized },
+    select: { id: true },
+  })
+  if (existing) return existing.id
+
+  const created = await tx.institution.create({
+    data: {
+      name: normalized,
+      type: inferInstitutionType(normalized),
+    },
+    select: { id: true },
+  })
+  return created.id
+}
+
+/**
+ * Garante a existência da conta de uma instituição para o client informado.
+ */
+export async function upsertAccountForInstitution(
+  institutionId: string,
+  institutionName: string,
+  clientId: string,
+  tx: TxClient,
+): Promise<string> {
+  const existing = await tx.account.findFirst({
+    where: { institutionId, clientId },
+    select: { id: true },
+  })
+  if (existing) return existing.id
+
+  const created = await tx.account.create({
+    data: {
+      name: buildAccountName(institutionName),
+      type: AccountType.BROKERAGE,
+      clientId,
+      institutionId,
+    },
+    select: { id: true },
+  })
+  return created.id
+}
+
+/**
  * Garante a existencia do ativo por ticker e retorna seu id.
  */
 export async function upsertAssetFromImport(
@@ -247,8 +391,16 @@ export async function upsertAssetFromImport(
 export async function analyzeNegociacaoRows(rows: NegociacaoRow[]): Promise<AnalyzeNegociacaoResult> {
   const parsedRows: ParsedRow[] = rows.map((row) => ({ ...row }))
   const tickers = Array.from(new Set(parsedRows.map((row) => row.ticker)))
+  const institutionNames = Array.from(
+    new Set(
+      parsedRows
+        .map((row) => row.instituicao)
+        .filter((value): value is string => Boolean(value?.trim()))
+        .map((value) => normalizeInstitutionName(value)),
+    ),
+  )
 
-  const [assetsByTicker, classes, allAssets] = await Promise.all([
+  const [assetsByTicker, classes, allAssets, existingInstitutions] = await Promise.all([
     prisma.asset.findMany({
       where: { ticker: { in: tickers } },
       select: { id: true, ticker: true },
@@ -267,6 +419,12 @@ export async function analyzeNegociacaoRows(rows: NegociacaoRow[]): Promise<Anal
         assetClass: { select: { name: true } },
       },
     }),
+    institutionNames.length
+      ? prisma.institution.findMany({
+          where: { name: { in: institutionNames } },
+          select: { name: true, type: true },
+        })
+      : Promise.resolve([]),
   ])
 
   const assetByTicker = new Map(assetsByTicker.map((asset) => [asset.ticker ?? '', asset.id]))
@@ -303,6 +461,7 @@ export async function analyzeNegociacaoRows(rows: NegociacaoRow[]): Promise<Anal
   }
 
   const missingByInferredCode = new Map<string, Set<string>>()
+  const institutionRowCount = new Map<string, number>()
 
   const unresolvedAssets: UnresolvedAsset[] = Array.from(groupedUnresolved.entries()).map(([ticker, unresolvedRows]) => {
     const inferredClass = inferAssetClass(ticker)
@@ -324,6 +483,30 @@ export async function analyzeNegociacaoRows(rows: NegociacaoRow[]): Promise<Anal
     }
   })
 
+  for (const row of parsedRows) {
+    if (!row.instituicao?.trim()) continue
+    const normalized = normalizeInstitutionName(row.instituicao)
+    institutionRowCount.set(normalized, (institutionRowCount.get(normalized) ?? 0) + 1)
+  }
+
+  const existingInstitutionByName = new Map(
+    existingInstitutions.map((institution) => [institution.name, institution]),
+  )
+
+  const institutionPreviews: InstitutionPreview[] = Array.from(institutionRowCount.entries()).map(
+    ([normalizedName, rowCount]) => {
+      const existing = existingInstitutionByName.get(normalizedName)
+      const inferred = existing?.type ?? inferInstitutionType(normalizedName)
+      return {
+        normalizedName,
+        displayName: buildAccountName(normalizedName),
+        inferredType: institutionTypeToPtBr(inferred),
+        isNew: !existing,
+        rowCount,
+      }
+    },
+  )
+
   const missingClasses: MissingClass[] = Array.from(missingByInferredCode.entries()).map(([inferredCode, tickersSet]) => {
     const suggestion = CLASS_SUGGESTIONS[inferredCode] ?? CLASS_SUGGESTIONS.OUTRO
     return {
@@ -343,6 +526,7 @@ export async function analyzeNegociacaoRows(rows: NegociacaoRow[]): Promise<Anal
     missingClasses,
     availableClasses,
     existingAssets,
+    institutionPreviews,
     summary: {
       totalRows: parsedRows.length,
       readyCount: ready.length,
@@ -359,7 +543,7 @@ export async function confirmAndImportNegociacaoForUser(
   userId: string,
   payload: ImportPayload,
 ): Promise<ConfirmImportResult> {
-  const accountId = await getDefaultAccountForUser(userId)
+  const clientId = await getClientForUser(userId)
   const normalizedReadyRows: ParsedRow[] = payload.readyRows.map((row) => ({
     ...row,
     date: ensureDate(row.date),
@@ -373,9 +557,40 @@ export async function confirmAndImportNegociacaoForUser(
   )
 
   const rowsToImport: ParsedRow[] = [...normalizedReadyRows, ...unresolvedRows]
+  const uniqueInstitutions = Array.from(
+    new Set(
+      rowsToImport
+        .map((row) => row.instituicao)
+        .filter((value): value is string => Boolean(value?.trim()))
+        .map((value) => normalizeInstitutionName(value)),
+    ),
+  )
 
   const result = await prisma.$transaction(async (tx) => {
     const resolvedAssetIdByTicker = new Map<string, string>()
+    const accountByInstitution = new Map<string, string>()
+    let institutionsCreated = 0
+    let accountsCreated = 0
+
+    for (const instName of uniqueInstitutions) {
+      const existingInst = await tx.institution.findFirst({
+        where: { name: instName },
+        select: { id: true },
+      })
+
+      const institutionId = await upsertInstitution(instName, tx)
+      if (!existingInst) institutionsCreated++
+
+      const existingAcc = await tx.account.findFirst({
+        where: { institutionId, clientId },
+        select: { id: true },
+      })
+
+      const accountId = await upsertAccountForInstitution(institutionId, instName, clientId, tx)
+      if (!existingAcc) accountsCreated++
+
+      accountByInstitution.set(instName, accountId)
+    }
 
     for (const classInput of payload.classesToCreate) {
       const code = classInput.code.trim().toUpperCase()
@@ -504,6 +719,12 @@ export async function confirmAndImportNegociacaoForUser(
     }>()
 
     for (const row of rowsToImport) {
+      const normalizedInst = normalizeInstitutionName(row.instituicao ?? '')
+      const rowAccountId = accountByInstitution.get(normalizedInst)
+      if (!rowAccountId) {
+        throw new Error(`Conta não encontrada para ${row.instituicao}`)
+      }
+
       const assetId = row.assetId ?? resolvedAssetIdByTicker.get(row.ticker)
       if (!assetId) {
         throw new Error(`Não foi possível resolver ativo para ticker ${row.ticker}`)
@@ -513,7 +734,7 @@ export async function confirmAndImportNegociacaoForUser(
       txByReferenceId.set(referenceId, {
         referenceId,
         type: row.type,
-        accountId,
+        accountId: rowAccountId,
         assetId,
         quantity: new Prisma.Decimal(row.quantity.toString()),
         price: new Prisma.Decimal(row.price.toString()),
@@ -566,12 +787,16 @@ export async function confirmAndImportNegociacaoForUser(
       insertedTransactions.map((transaction) => [transaction.referenceId, transaction.id]),
     )
 
-    const lastLedger = await tx.ledgerEntry.findFirst({
-      where: { accountId },
-      orderBy: { createdAt: 'desc' },
-      select: { balanceAfter: true },
-    })
-    let runningBalance = lastLedger?.balanceAfter ?? new Prisma.Decimal(0)
+    const accountIds = Array.from(new Set(uniqueTransactionData.map((transaction) => transaction.accountId)))
+    const runningBalances = new Map<string, Prisma.Decimal>()
+    for (const accountId of accountIds) {
+      const lastLedger = await tx.ledgerEntry.findFirst({
+        where: { accountId },
+        orderBy: { createdAt: 'desc' },
+        select: { balanceAfter: true },
+      })
+      runningBalances.set(accountId, lastLedger?.balanceAfter ?? new Prisma.Decimal(0))
+    }
 
     const insertedRowsOrdered = uniqueTransactionData
       .filter((txData) => insertedByReferenceId.has(txData.referenceId))
@@ -579,9 +804,11 @@ export async function confirmAndImportNegociacaoForUser(
 
     const ledgerEntriesToCreate = insertedRowsOrdered.map((txData) => {
       const isDebit = txData.type === 'BUY'
-      runningBalance = isDebit
-        ? runningBalance.minus(txData.totalAmount)
-        : runningBalance.plus(txData.totalAmount)
+      const currentBalance = runningBalances.get(txData.accountId) ?? new Prisma.Decimal(0)
+      const nextBalance = isDebit
+        ? currentBalance.minus(txData.totalAmount)
+        : currentBalance.plus(txData.totalAmount)
+      runningBalances.set(txData.accountId, nextBalance)
 
       const transactionId = insertedByReferenceId.get(txData.referenceId)
       if (!transactionId) {
@@ -590,10 +817,10 @@ export async function confirmAndImportNegociacaoForUser(
 
       return {
         transactionId,
-        accountId,
+        accountId: txData.accountId,
         debit: isDebit ? txData.totalAmount : null,
         credit: isDebit ? null : txData.totalAmount,
-        balanceAfter: runningBalance,
+        balanceAfter: nextBalance,
       }
     })
 
@@ -604,11 +831,15 @@ export async function confirmAndImportNegociacaoForUser(
     const assetsCreated = assetsToCreate.filter((asset) => !existingTickersBefore.has(asset.ticker)).length
     const transactionsImported = insertedTransactions.length
     const transactionsSkipped = uniqueTransactionData.length - transactionsImported
+    const affectedAccountIds = Array.from(new Set(uniqueTransactionData.map((txData) => txData.accountId)))
 
     return {
       assetsCreated,
+      institutionsCreated,
+      accountsCreated,
       transactionsImported,
       transactionsSkipped,
+      affectedAccountIds,
     }
   }, {
     timeout: 60000,
@@ -621,15 +852,23 @@ export async function confirmAndImportNegociacaoForUser(
       entityId: 'batch',
       action: 'CREATE',
       previousValue: null,
-      newValue: JSON.stringify({ ...result, accountId }),
+      newValue: JSON.stringify({ ...result }),
       changedBy: userId,
       changedAt: new Date(),
     },
   })
 
-  await positionsService.recalcPositions(accountId)
+  for (const accountId of result.affectedAccountIds) {
+    await positionsService.recalcPositions(accountId)
+  }
 
-  return result
+  return {
+    assetsCreated: result.assetsCreated,
+    institutionsCreated: result.institutionsCreated,
+    accountsCreated: result.accountsCreated,
+    transactionsImported: result.transactionsImported,
+    transactionsSkipped: result.transactionsSkipped,
+  }
 }
 
 /**

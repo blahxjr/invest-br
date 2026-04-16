@@ -61,7 +61,7 @@ async function AccountsContent() {
             <AccountCard
               key={acc.id}
               name={acc.name}
-              type={acc.type}
+              type={acc.institution?.type ?? acc.type}
               institutionName={acc.institution?.name}
               portfolioName={acc.portfolio?.name}
               clientName={acc.client?.name}

@@ -440,6 +440,7 @@ function NegociacaoWizardCard() {
   const createList = unresolvedAssets.filter((asset) => asset.resolution?.action === 'create')
   const associateList = unresolvedAssets.filter((asset) => asset.resolution?.action === 'associate')
   const classesToCreateList = missingClasses.filter((missingClass) => missingClass.confirmAutoCreate)
+  const institutionPreviews = analysis?.institutionPreviews ?? []
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -713,6 +714,22 @@ function NegociacaoWizardCard() {
       {step === 3 && analysis && (
         <div className="mt-4 space-y-3">
           <div className="rounded-lg border border-gray-200 p-3 text-sm text-gray-700 space-y-1">
+            <p>🏦 Corretoras detectadas:</p>
+            {institutionPreviews.map((preview) => (
+              <p key={preview.normalizedName} className="flex items-center gap-2">
+                <span>
+                  • {preview.displayName} ({preview.inferredType}) — {preview.isNew ? 'será criada automaticamente' : 'já cadastrada'} [{preview.rowCount} transações]
+                </span>
+                <span
+                  className={[
+                    'rounded-full px-2 py-0.5 text-[10px] font-semibold',
+                    preview.isNew ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600',
+                  ].join(' ')}
+                >
+                  {preview.isNew ? 'NOVA' : 'JÁ EXISTE'}
+                </span>
+              </p>
+            ))}
             <p>🏷️ {classesToCreateList.length} classe(s) de ativo serão criadas:</p>
             {classesToCreateList.map((missingClass) => (
               <p key={`class-${missingClass.inferredCode}`}>• {missingClass.name} (código: {normalizeClassCode(missingClass.code)})</p>

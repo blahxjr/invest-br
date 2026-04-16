@@ -11,6 +11,14 @@ const mocks = vi.hoisted(() => {
       createMany: vi.fn(),
       upsert: vi.fn(),
     },
+    institution: {
+      findFirst: vi.fn(),
+      create: vi.fn(),
+    },
+    account: {
+      findFirst: vi.fn(),
+      create: vi.fn(),
+    },
     transaction: {
       findMany: vi.fn(),
       createMany: vi.fn(),
@@ -27,7 +35,7 @@ const mocks = vi.hoisted(() => {
   return {
     tx,
     prisma: {
-      account: { findFirst: vi.fn() },
+      client: { findFirst: vi.fn() },
       auditLog: { create: vi.fn() },
       $transaction: vi.fn(),
     },
@@ -45,9 +53,10 @@ vi.mock('@/modules/positions/service', () => ({
 
 import { confirmAndImportNegociacaoForUser } from '@/modules/b3/service'
 
-function buildPayload(assetCount: number) {
+function buildPayload(assetCount: number, institutions: string[] = ['BTG']) {
   const resolutions = Array.from({ length: assetCount }).map((_, index) => {
     const ticker = `ATV${index}11`
+    const instituicao = institutions[index % institutions.length] ?? 'BTG'
     return {
       ticker,
       suggestedName: `${ticker} - FII`,
@@ -59,7 +68,7 @@ function buildPayload(assetCount: number) {
           type: 'BUY' as const,
           ticker,
           mercado: 'Mercado a Vista',
-          instituicao: 'BTG',
+          instituicao,
           quantity: 1,
           price: 10,
           total: 10,
@@ -86,10 +95,37 @@ describe('confirmAndImportNegociacaoForUser batch', () => {
   beforeEach(() => {
     vi.clearAllMocks()
 
-    mocks.prisma.account.findFirst.mockResolvedValue({ id: 'account-1' })
+    mocks.prisma.client.findFirst.mockResolvedValue({ id: 'client-1' })
 
     mocks.prisma.$transaction.mockImplementation(async (callback, options) => {
       return callback(mocks.tx, options)
+    })
+
+    const institutionByName = new Map<string, string>()
+    const accountByInstitutionId = new Map<string, string>()
+
+    mocks.tx.institution.findFirst.mockImplementation(async ({ where }) => {
+      const id = institutionByName.get(where.name)
+      return id ? { id } : null
+    })
+
+    mocks.tx.institution.create.mockImplementation(async ({ data }) => {
+      const id = `inst-${institutionByName.size + 1}`
+      institutionByName.set(data.name, id)
+      return { id }
+    })
+
+    mocks.tx.account.findFirst.mockImplementation(async ({ where }) => {
+      const key = `${where.institutionId}-${where.clientId}`
+      const id = accountByInstitutionId.get(key)
+      return id ? { id } : null
+    })
+
+    mocks.tx.account.create.mockImplementation(async ({ data }) => {
+      const key = `${data.institutionId}-${data.clientId}`
+      const id = `acc-${accountByInstitutionId.size + 1}`
+      accountByInstitutionId.set(key, id)
+      return { id }
     })
 
     mocks.tx.assetClass.findMany.mockResolvedValue([{ id: 'class-fii', code: 'FII', name: 'Fundos Imobiliarios' }])
@@ -158,6 +194,18 @@ describe('confirmAndImportNegociacaoForUser batch', () => {
 
     await confirmAndImportNegociacaoForUser('user-1', payload)
 
-    expect(mocks.recalcPositions).toHaveBeenCalledWith('account-1')
+    expect(mocks.recalcPositions).toHaveBeenCalled()
+  })
+
+  it('vincula transacoes de corretoras distintas em contas distintas', async () => {
+    const payload = buildPayload(2, ['NU INVEST CORRETORA DE VALORES S.A.', 'XP INVESTIMENTOS S.A.'])
+
+    await confirmAndImportNegociacaoForUser('user-1', payload)
+
+    const firstCreateManyCall = mocks.tx.transaction.createMany.mock.calls[0]
+    const data = firstCreateManyCall?.[0]?.data as Array<{ accountId: string }>
+    const accountIds = Array.from(new Set(data.map((item) => item.accountId)))
+
+    expect(accountIds.length).toBe(2)
   })
 })
