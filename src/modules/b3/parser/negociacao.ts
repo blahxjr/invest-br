@@ -2,6 +2,24 @@ import type { NegociacaoRow } from './index'
 
 type RawRow = Array<string | number | null | undefined>
 
+export type InferredAssetClass = 'FII' | 'ETF' | 'ACAO' | 'RENDA_FIXA'
+
+const KNOWN_ETF_TICKERS = new Set([
+  'IMAB11',
+  'IRFM11',
+  'LFTS11',
+  'NTNS11',
+  'DEBB11',
+  'DIVO11',
+  'FIND11',
+  'GOVE11',
+  'JURO11',
+  'ELAS11',
+  'WRLD11',
+  'XFIX11',
+  'MILL11',
+])
+
 function parseDate(value: string): Date | null {
   const cleaned = value.trim()
   const match = cleaned.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
@@ -39,6 +57,36 @@ function normalizeTicker(ticker: string, mercado: string): string {
     return upper.slice(0, -1)
   }
   return upper
+}
+
+/**
+ * Infere a classe do ativo a partir do ticker da B3.
+ */
+export function inferAssetClass(ticker: string): InferredAssetClass | null {
+  const normalized = ticker.trim().toUpperCase()
+  if (!normalized) return null
+
+  if (normalized.endsWith('F')) {
+    return inferAssetClass(normalized.slice(0, -1))
+  }
+
+  if (normalized.endsWith('11B') || normalized.includes('DEB')) {
+    return 'RENDA_FIXA'
+  }
+
+  if (KNOWN_ETF_TICKERS.has(normalized)) {
+    return 'ETF'
+  }
+
+  if (/[3456]$/.test(normalized)) {
+    return 'ACAO'
+  }
+
+  if (normalized.endsWith('11')) {
+    return 'FII'
+  }
+
+  return null
 }
 
 function buildReferenceId(dateRaw: string, ticker: string, quantity: number, price: number): string {

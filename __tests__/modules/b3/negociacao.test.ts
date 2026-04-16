@@ -1,4 +1,4 @@
-import { parseNegociacaoRow } from '@/modules/b3/parser'
+import { inferAssetClass, parseNegociacaoRow } from '@/modules/b3/parser'
 
 describe('parseNegociacaoRow', () => {
   it('parseia compra em mercado a vista', () => {
@@ -40,5 +40,27 @@ describe('parseNegociacaoRow', () => {
 
     expect(result).not.toBeNull()
     expect(result?.ticker).toBe('AGRO3')
+  })
+})
+
+describe('inferAssetClass', () => {
+  it('classifica BRCO11 como FII', () => {
+    expect(inferAssetClass('BRCO11')).toBe('FII')
+  })
+
+  it('classifica IMAB11 como ETF', () => {
+    expect(inferAssetClass('IMAB11')).toBe('ETF')
+  })
+
+  it('classifica B3SA3F como ACAO', () => {
+    expect(inferAssetClass('B3SA3F')).toBe('ACAO')
+  })
+
+  it('classifica TAEE11F como FII', () => {
+    expect(inferAssetClass('TAEE11F')).toBe('FII')
+  })
+
+  it('retorna null para BEEF1', () => {
+    expect(inferAssetClass('BEEF1')).toBeNull()
   })
 })

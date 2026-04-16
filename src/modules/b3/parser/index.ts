@@ -37,6 +37,6 @@ export type RawSheet = {
   rows: Array<Array<string | number | null | undefined>>
 }
 
-export { parseNegociacao, parseNegociacaoRow } from './negociacao'
+export { inferAssetClass, parseNegociacao, parseNegociacaoRow, type InferredAssetClass } from './negociacao'
 export { parseMovimentacao, parseMovimentacaoRow } from './movimentacao'
 export { parsePosicao, parsePosicaoRow } from './posicao'

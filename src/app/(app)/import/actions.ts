@@ -2,6 +2,11 @@
 
 import { auth } from '@/lib/auth'
 import {
+  analyzeNegociacaoRows,
+  confirmAndImportNegociacaoForUser,
+  type AnalyzeNegociacaoResult,
+  type ConfirmImportResult,
+  type ImportPayload,
   importMovimentacaoRows,
   importNegociacaoRows,
   importPosicaoRows,
@@ -14,6 +19,54 @@ import {
   type RawSheet,
 } from '@/modules/b3/parser'
 import * as XLSX from 'xlsx'
+
+export type SerializableParsedRow = {
+  date: string
+  type: 'BUY' | 'SELL'
+  ticker: string
+  mercado: string
+  instituicao: string
+  quantity: number
+  price: number
+  total: number
+  referenceId: string
+  assetId?: string
+}
+
+export type SerializableUnresolvedAsset = {
+  ticker: string
+  suggestedName: string
+  inferredClass: 'FII' | 'ETF' | 'ACAO' | 'RENDA_FIXA' | null
+  availableClasses: string[]
+  rows: SerializableParsedRow[]
+  resolution?: {
+    action: 'create' | 'associate'
+    assetClassId?: string
+    existingAssetId?: string
+    name?: string
+  }
+}
+
+export type AnalyzeNegociacaoResponse = {
+  ready: SerializableParsedRow[]
+  unresolvedAssets: SerializableUnresolvedAsset[]
+  summary: {
+    totalRows: number
+    readyCount: number
+    unresolvedCount: number
+    uniqueUnresolvedTickers: string[]
+  }
+  error?: string
+}
+
+export type ConfirmImportPayload = {
+  readyRows: SerializableParsedRow[]
+  resolutions: SerializableUnresolvedAsset[]
+}
+
+export type ConfirmImportResponse = ConfirmImportResult & {
+  error?: string
+}
 
 function workbookFromArrayBuffer(buffer: ArrayBuffer) {
   return XLSX.read(buffer, { type: 'array', cellDates: false })
@@ -48,6 +101,33 @@ async function getUploadedFile(formData: FormData): Promise<File> {
     throw new Error('Arquivo vazio')
   }
   return file
+}
+
+function sheetRowsForNegociacao(workbook: XLSX.WorkBook): Array<Array<string | number | null | undefined>> {
+  return sheetRows(workbook, 'Negociação').length > 0
+    ? sheetRows(workbook, 'Negociação')
+    : sheetRows(workbook, 'Negociacao')
+}
+
+function serializeAnalyzeResult(result: AnalyzeNegociacaoResult): AnalyzeNegociacaoResponse {
+  return {
+    ...result,
+    ready: result.ready.map((row) => ({ ...row, date: row.date.toISOString() })),
+    unresolvedAssets: result.unresolvedAssets.map((asset) => ({
+      ...asset,
+      rows: asset.rows.map((row) => ({ ...row, date: row.date.toISOString() })),
+    })),
+  }
+}
+
+function toImportPayload(payload: ConfirmImportPayload): ImportPayload {
+  return {
+    readyRows: payload.readyRows.map((row) => ({ ...row, date: new Date(row.date) })),
+    resolutions: payload.resolutions.map((asset) => ({
+      ...asset,
+      rows: asset.rows.map((row) => ({ ...row, date: new Date(row.date) })),
+    })),
+  }
 }
 
 /**
@@ -112,5 +192,66 @@ export async function importPosicao(formData: FormData): Promise<ImportResult> {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Erro desconhecido'
     return { upserted: 0, errors: [message] }
+  }
+}
+
+/**
+ * Analisa planilha de negociação da B3 sem persistir transações.
+ */
+export async function analyzeNegociacaoFile(formData: FormData): Promise<AnalyzeNegociacaoResponse> {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return {
+      ready: [],
+      unresolvedAssets: [],
+      summary: { totalRows: 0, readyCount: 0, unresolvedCount: 0, uniqueUnresolvedTickers: [] },
+      error: 'Usuario nao autenticado',
+    }
+  }
+
+  try {
+    const file = await getUploadedFile(formData)
+    const workbook = workbookFromArrayBuffer(await file.arrayBuffer())
+    const rows = sheetRowsForNegociacao(workbook)
+    const parsedRows = parseNegociacao(rows)
+    const analysis = await analyzeNegociacaoRows(parsedRows)
+
+    return serializeAnalyzeResult(analysis)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido'
+    return {
+      ready: [],
+      unresolvedAssets: [],
+      summary: { totalRows: 0, readyCount: 0, unresolvedCount: 0, uniqueUnresolvedTickers: [] },
+      error: message,
+    }
+  }
+}
+
+/**
+ * Confirma resoluções e importa transações de negociação.
+ */
+export async function confirmAndImportNegociacao(payload: ConfirmImportPayload): Promise<ConfirmImportResponse> {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return {
+      assetsCreated: 0,
+      transactionsImported: 0,
+      transactionsSkipped: 0,
+      error: 'Usuario nao autenticado',
+    }
+  }
+
+  try {
+    const result = await confirmAndImportNegociacaoForUser(session.user.id, toImportPayload(payload))
+    return result
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido'
+    return {
+      assetsCreated: 0,
+      transactionsImported: 0,
+      transactionsSkipped: 0,
+      error: message,
+    }
   }
 }
