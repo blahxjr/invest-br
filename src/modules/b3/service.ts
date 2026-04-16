@@ -15,17 +15,38 @@ export type ParsedRow = NegociacaoRow & {
   assetId?: string
 }
 
+export type AssetClassOption = {
+  id: string
+  name: string
+  code: string | null
+}
+
+export type ExistingAssetOption = {
+  id: string
+  ticker: string | null
+  name: string
+  className: string
+}
+
+export type MissingClass = {
+  inferredCode: string
+  suggestedName: string
+  suggestedDescription: string
+  affectedTickers: string[]
+}
+
 export type UnresolvedAsset = {
   ticker: string
   suggestedName: string
   inferredClass: InferredAssetClass | null
-  availableClasses: string[]
+  inferredCategory: AssetCategory | null
   rows: ParsedRow[]
   resolution?: {
     action: 'create' | 'associate'
     assetClassId?: string
     existingAssetId?: string
     name?: string
+    category?: AssetCategory
   }
 }
 
@@ -42,11 +63,20 @@ export type AnalyzeNegociacaoSummary = {
 }
 
 export type AnalyzeNegociacaoResult = ParsedNegociacaoResult & {
+  missingClasses: MissingClass[]
+  availableClasses: AssetClassOption[]
+  existingAssets: ExistingAssetOption[]
   summary: AnalyzeNegociacaoSummary
 }
 
 export type ImportPayload = {
   readyRows: ParsedRow[]
+  classesToCreate: Array<{
+    inferredCode: string
+    name: string
+    code: string
+    description?: string
+  }>
   resolutions: UnresolvedAsset[]
 }
 
@@ -58,6 +88,16 @@ export type ConfirmImportResult = {
 
 type DbCategory = AssetCategory
 type TxClient = Omit<typeof prisma, '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends'>
+
+const CLASS_SUGGESTIONS: Record<string, { name: string; description: string; code: string }> = {
+  FII: { name: 'Fundos Imobiliários', description: 'FIIs negociados na B3', code: 'FII' },
+  ETF: { name: 'ETFs', description: 'Fundos de índice negociados em bolsa', code: 'ETF' },
+  ACAO: { name: 'Ações', description: 'Ações de empresas listadas na B3', code: 'ACOES' },
+  RENDA_FIXA: { name: 'Renda Fixa', description: 'Títulos de renda fixa (Tesouro, CDB, etc.)', code: 'RENDA_FIXA' },
+  BDR: { name: 'BDRs', description: 'Brazilian Depositary Receipts', code: 'BDR' },
+  CRIPTO: { name: 'Criptoativos', description: 'Criptomoedas e tokens', code: 'CRIPTO' },
+  OUTRO: { name: 'Outros', description: 'Ativos não classificados', code: 'OUTROS' },
+}
 
 function inferCategoryFromTickerAndMarket(ticker: string, mercado?: string): PosicaoRow['category'] {
   const upperTicker = ticker.toUpperCase()
@@ -87,6 +127,28 @@ function toAssetClassCode(inferred: InferredAssetClass | null): string | null {
   if (!inferred) return null
   if (inferred === 'ACAO') return 'ACOES'
   return inferred
+}
+
+/**
+ * Infere categoria do ativo para preenchimento automático no wizard.
+ */
+export function inferAssetCategory(inferredClass: string | null): AssetCategory | null {
+  switch (inferredClass) {
+    case 'FII':
+      return AssetCategory.FII
+    case 'ETF':
+      return AssetCategory.ETF
+    case 'ACAO':
+      return AssetCategory.STOCK
+    case 'RENDA_FIXA':
+      return AssetCategory.FIXED_INCOME
+    case 'BDR':
+      return AssetCategory.BDR
+    case 'CRIPTO':
+      return AssetCategory.CRYPTO
+    default:
+      return null
+  }
 }
 
 function getSuggestedName(ticker: string, inferred: InferredAssetClass | null): string {
@@ -196,7 +258,7 @@ export async function analyzeNegociacaoRows(rows: NegociacaoRow[]): Promise<Anal
   const parsedRows: ParsedRow[] = rows.map((row) => ({ ...row }))
   const tickers = Array.from(new Set(parsedRows.map((row) => row.ticker)))
 
-  const [assets, classes] = await Promise.all([
+  const [assetsByTicker, classes, allAssets] = await Promise.all([
     prisma.asset.findMany({
       where: { ticker: { in: tickers } },
       select: { id: true, ticker: true },
@@ -205,10 +267,35 @@ export async function analyzeNegociacaoRows(rows: NegociacaoRow[]): Promise<Anal
       orderBy: { name: 'asc' },
       select: { id: true, code: true, name: true },
     }),
+    prisma.asset.findMany({
+      where: { ticker: { not: null } },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        ticker: true,
+        name: true,
+        assetClass: { select: { name: true } },
+      },
+    }),
   ])
 
-  const assetByTicker = new Map(assets.map((asset) => [asset.ticker ?? '', asset.id]))
-  const availableClasses = classes.map((assetClass) => assetClass.code ?? assetClass.name)
+  const assetByTicker = new Map(assetsByTicker.map((asset) => [asset.ticker ?? '', asset.id]))
+  const availableClasses: AssetClassOption[] = classes.map((assetClass) => ({
+    id: assetClass.id,
+    name: assetClass.name,
+    code: assetClass.code,
+  }))
+  const existingAssets: ExistingAssetOption[] = allAssets.map((asset) => ({
+    id: asset.id,
+    ticker: asset.ticker,
+    name: asset.name,
+    className: asset.assetClass.name,
+  }))
+  const availableClassCodes = new Set(
+    classes
+      .map((assetClass) => assetClass.code?.trim().toUpperCase() ?? null)
+      .filter((code): code is string => Boolean(code)),
+  )
 
   const ready: ParsedRow[] = []
   const groupedUnresolved = new Map<string, ParsedRow[]>()
@@ -225,14 +312,35 @@ export async function analyzeNegociacaoRows(rows: NegociacaoRow[]): Promise<Anal
     groupedUnresolved.set(row.ticker, existingRows)
   }
 
+  const missingByInferredCode = new Map<string, Set<string>>()
+
   const unresolvedAssets: UnresolvedAsset[] = Array.from(groupedUnresolved.entries()).map(([ticker, unresolvedRows]) => {
     const inferredClass = inferAssetClass(ticker)
+    const inferredCode = inferredClass
+    const expectedClassCode = toAssetClassCode(inferredClass)
+
+    if (inferredCode && expectedClassCode && !availableClassCodes.has(expectedClassCode)) {
+      const affected = missingByInferredCode.get(inferredCode) ?? new Set<string>()
+      affected.add(ticker)
+      missingByInferredCode.set(inferredCode, affected)
+    }
+
     return {
       ticker,
       suggestedName: getSuggestedName(ticker, inferredClass),
       inferredClass,
-      availableClasses,
+      inferredCategory: inferAssetCategory(inferredClass),
       rows: unresolvedRows,
+    }
+  })
+
+  const missingClasses: MissingClass[] = Array.from(missingByInferredCode.entries()).map(([inferredCode, tickersSet]) => {
+    const suggestion = CLASS_SUGGESTIONS[inferredCode] ?? CLASS_SUGGESTIONS.OUTRO
+    return {
+      inferredCode,
+      suggestedName: suggestion.name,
+      suggestedDescription: suggestion.description,
+      affectedTickers: Array.from(tickersSet).sort(),
     }
   })
 
@@ -242,6 +350,9 @@ export async function analyzeNegociacaoRows(rows: NegociacaoRow[]): Promise<Anal
   return {
     ready,
     unresolvedAssets,
+    missingClasses,
+    availableClasses,
+    existingAssets,
     summary: {
       totalRows: parsedRows.length,
       readyCount: ready.length,
@@ -267,6 +378,26 @@ export async function confirmAndImportNegociacaoForUser(
   return prisma.$transaction(async (tx) => {
     const resolvedAssetIdByTicker = new Map<string, string>()
     let assetsCreated = 0
+
+    for (const classInput of payload.classesToCreate) {
+      const code = classInput.code.trim().toUpperCase()
+      if (!code) {
+        throw new Error('Código de classe inválido para criação automática')
+      }
+
+      await tx.assetClass.upsert({
+        where: { code },
+        update: {
+          name: classInput.name.trim(),
+          description: classInput.description?.trim() || null,
+        },
+        create: {
+          code,
+          name: classInput.name.trim(),
+          description: classInput.description?.trim() || null,
+        },
+      })
+    }
 
     for (const unresolved of payload.resolutions) {
       const resolution = unresolved.resolution
@@ -311,13 +442,13 @@ export async function confirmAndImportNegociacaoForUser(
         update: {
           name: resolution.name?.trim() || unresolved.ticker,
           assetClassId: classRecord.id,
-          category: toDbCategoryFromClassCode(classRecord.code ?? classRecord.name),
+          category: resolution.category ?? inferAssetCategory(unresolved.inferredClass) ?? toDbCategoryFromClassCode(classRecord.code ?? classRecord.name),
         },
         create: {
           ticker: unresolved.ticker,
           name: resolution.name?.trim() || unresolved.ticker,
           assetClassId: classRecord.id,
-          category: toDbCategoryFromClassCode(classRecord.code ?? classRecord.name),
+          category: resolution.category ?? inferAssetCategory(unresolved.inferredClass) ?? toDbCategoryFromClassCode(classRecord.code ?? classRecord.name),
         },
         select: { id: true },
       })

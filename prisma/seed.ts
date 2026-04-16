@@ -14,40 +14,41 @@ async function main() {
   console.log('🌱 Iniciando seed do catálogo de ativos...')
 
   // ── Classes de ativos ──────────────────────────────────────────────────────
-  const classes = await Promise.all([
-    prisma.assetClass.upsert({
-      where: { code: 'ACOES' },
-      update: {},
-      create: { name: 'Ações', code: 'ACOES', description: 'Ações de empresas listadas em bolsa (B3)' },
-    }),
-    prisma.assetClass.upsert({
-      where: { code: 'FII' },
-      update: {},
-      create: { name: 'Fundos Imobiliários', code: 'FII', description: 'FIIs negociados na B3' },
-    }),
-    prisma.assetClass.upsert({
-      where: { code: 'ETF' },
-      update: {},
-      create: { name: 'ETFs', code: 'ETF', description: 'Exchange Traded Funds listados na B3' },
-    }),
-    prisma.assetClass.upsert({
-      where: { code: 'RF' },
-      update: {},
-      create: { name: 'Renda Fixa', code: 'RF', description: 'Tesouro Direto, CDB, LCI, LCA, CRI, CRA, Debentures' },
-    }),
-    prisma.assetClass.upsert({
-      where: { code: 'CRYPTO' },
-      update: {},
-      create: { name: 'Criptomoedas', code: 'CRYPTO', description: 'Ativos digitais e criptomoedas' },
-    }),
-    prisma.assetClass.upsert({
-      where: { code: 'CASH' },
-      update: {},
-      create: { name: 'Caixa e Equivalentes', code: 'CASH', description: 'Conta corrente, poupança, CDB liquidez diária' },
-    }),
-  ])
+  const defaultClasses = [
+    { code: 'FII', name: 'Fundos Imobiliários', description: 'FIIs negociados na B3' },
+    { code: 'ETF', name: 'ETFs', description: 'Fundos de índice negociados em bolsa' },
+    { code: 'ACOES', name: 'Ações', description: 'Ações de empresas listadas na B3' },
+    { code: 'RENDA_FIXA', name: 'Renda Fixa', description: 'Títulos de renda fixa' },
+    { code: 'BDR', name: 'BDRs', description: 'Brazilian Depositary Receipts' },
+    { code: 'CRIPTO', name: 'Criptoativos', description: 'Criptomoedas e tokens' },
+    { code: 'OUTROS', name: 'Outros', description: 'Ativos não classificados' },
+  ] as const
 
-  const [acoes, fii, etf] = classes
+  const classes = await Promise.all(
+    defaultClasses.map((assetClass) =>
+      prisma.assetClass.upsert({
+        where: { code: assetClass.code },
+        update: {
+          name: assetClass.name,
+          description: assetClass.description,
+        },
+        create: {
+          name: assetClass.name,
+          code: assetClass.code,
+          description: assetClass.description,
+        },
+      }),
+    ),
+  )
+
+  const acoes = classes.find((assetClass) => assetClass.code === 'ACOES')
+  const fii = classes.find((assetClass) => assetClass.code === 'FII')
+  const etf = classes.find((assetClass) => assetClass.code === 'ETF')
+
+  if (!acoes || !fii || !etf) {
+    throw new Error('Classes padrão obrigatórias não foram encontradas durante o seed')
+  }
+
   console.log(`✅ ${classes.length} classes de ativos criadas/confirmadas`)
 
   // ── Ações BR ───────────────────────────────────────────────────────────────

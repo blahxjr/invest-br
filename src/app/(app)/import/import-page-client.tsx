@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 import {
   analyzeNegociacaoFile,
   confirmAndImportNegociacao,
@@ -9,9 +9,12 @@ import {
   type AnalyzeNegociacaoResponse,
   type ConfirmImportPayload,
   type ConfirmImportResponse,
+  type SerializableAssetClassOption,
+  type SerializableMissingClass,
   type SerializableUnresolvedAsset,
 } from './actions'
 import type { ImportResult } from '@/modules/b3/service'
+import { AssetSearchCombobox } from '@/components/ui/AssetSearchCombobox'
 
 type ImportAction = (formData: FormData) => Promise<ImportResult>
 
@@ -22,6 +25,25 @@ type ImportCardProps = {
   action: ImportAction
   onFinished: (result: ImportResult) => void
 }
+
+type WizardStep = 1 | 2 | 3 | 4
+
+type MissingClassDraft = SerializableMissingClass & {
+  confirmAutoCreate: boolean
+}
+
+const ASSET_CATEGORY_OPTIONS = [
+  { value: 'STOCK', label: 'Ação' },
+  { value: 'FII', label: 'Fundo Imobiliário (FII)' },
+  { value: 'ETF', label: 'ETF' },
+  { value: 'FIXED_INCOME', label: 'Renda Fixa' },
+  { value: 'FUND', label: 'Fundo de Investimento' },
+  { value: 'CRYPTO', label: 'Criptoativo' },
+  { value: 'METAL', label: 'Metal Precioso' },
+  { value: 'REAL_ESTATE', label: 'Imóvel' },
+  { value: 'CASH', label: 'Caixa / Liquidez' },
+  { value: 'BDR', label: 'BDR' },
+] as const
 
 function ResultBox({ result }: { result: ImportResult | null }) {
   if (!result) return null
@@ -95,8 +117,6 @@ function ImportCard({ title, description, submitLabel, action, onFinished }: Imp
   )
 }
 
-type WizardStep = 1 | 2 | 3 | 4
-
 function AnalysisSkeleton() {
   return (
     <div className="mt-4 rounded-xl border border-gray-200 p-4 animate-pulse">
@@ -107,25 +127,136 @@ function AnalysisSkeleton() {
   )
 }
 
+function formatAffectedTickers(tickers: string[]) {
+  if (tickers.length <= 4) return tickers.join(', ')
+  const visible = tickers.slice(0, 4)
+  return `${visible.join(', ')}... (+${tickers.length - visible.length})`
+}
+
+function inferCodeFromClass(inferredClass: SerializableUnresolvedAsset['inferredClass']): string | null {
+  if (!inferredClass) return null
+  if (inferredClass === 'ACAO') return 'ACAO'
+  return inferredClass
+}
+
+function pickClassForAsset(
+  inferredClass: SerializableUnresolvedAsset['inferredClass'],
+  availableClasses: SerializableAssetClassOption[],
+  missingClasses: MissingClassDraft[],
+): string | undefined {
+  const inferredCode = inferCodeFromClass(inferredClass)
+  if (!inferredCode) return undefined
+
+  const existingByCode = availableClasses.find((assetClass) => assetClass.code?.toUpperCase() === normalizeClassCode(inferredCode))
+  if (existingByCode) return existingByCode.id
+
+  const missingByCode = missingClasses.find(
+    (missingClass) => missingClass.inferredCode === inferredCode && missingClass.confirmAutoCreate,
+  )
+
+  if (missingByCode) return missingByCode.code
+  return undefined
+}
+
+function normalizeClassCode(code: string): string {
+  const normalized = code.trim().toUpperCase()
+  if (normalized === 'ACAO') return 'ACOES'
+  return normalized
+}
+
+function findMissingDraftForAsset(
+  asset: SerializableUnresolvedAsset,
+  missingClasses: MissingClassDraft[],
+): MissingClassDraft | undefined {
+  const inferredCode = inferCodeFromClass(asset.inferredClass)
+  if (!inferredCode) return undefined
+  return missingClasses.find((missingClass) => missingClass.inferredCode === inferredCode)
+}
+
+function classLabel(option: SerializableAssetClassOption) {
+  if (!option.code) return option.name
+  return `${option.name} (${option.code})`
+}
+
 function NegociacaoWizardCard() {
   const [step, setStep] = useState<WizardStep>(1)
   const [analysis, setAnalysis] = useState<AnalyzeNegociacaoResponse | null>(null)
   const [unresolvedAssets, setUnresolvedAssets] = useState<SerializableUnresolvedAsset[]>([])
+  const [missingClasses, setMissingClasses] = useState<MissingClassDraft[]>([])
   const [result, setResult] = useState<ConfirmImportResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
+  const availableClasses = analysis?.availableClasses ?? []
+  const existingAssets = analysis?.existingAssets ?? []
+
   const unresolvedOnlyFii = unresolvedAssets.filter((asset) => asset.inferredClass === 'FII')
+
+  const existingClassCodes = useMemo(
+    () =>
+      new Set(
+        availableClasses
+          .map((assetClass) => assetClass.code?.toUpperCase() ?? null)
+          .filter((code): code is string => Boolean(code)),
+      ),
+    [availableClasses],
+  )
+
+  const duplicateMissingCodes = useMemo(() => {
+    const counters = new Map<string, number>()
+    for (const missingClass of missingClasses.filter((draft) => draft.confirmAutoCreate)) {
+      const code = normalizeClassCode(missingClass.code)
+      counters.set(code, (counters.get(code) ?? 0) + 1)
+    }
+
+    const duplicates = new Set<string>()
+    for (const [code, count] of counters.entries()) {
+      if (count > 1 || existingClassCodes.has(code)) {
+        duplicates.add(code)
+      }
+    }
+    return duplicates
+  }, [missingClasses, existingClassCodes])
+
+  const missingClassHasErrors = missingClasses.some((missingClass) => {
+    if (!missingClass.confirmAutoCreate) return false
+    const normalizedCode = normalizeClassCode(missingClass.code)
+    return !missingClass.name.trim() || !normalizedCode || duplicateMissingCodes.has(normalizedCode)
+  })
+
+  const confirmedMissingClassCodes = new Set(
+    missingClasses
+      .filter((missingClass) => missingClass.confirmAutoCreate)
+      .map((missingClass) => normalizeClassCode(missingClass.code)),
+  )
+
+  const classSelectionAllowed = (value: string | undefined, asset: SerializableUnresolvedAsset) => {
+    if (!value) return false
+
+    if (availableClasses.some((assetClass) => assetClass.id === value)) return true
+
+    const missingDraft = findMissingDraftForAsset(asset, missingClasses)
+    if (!missingDraft || !missingDraft.confirmAutoCreate) return false
+
+    const normalized = normalizeClassCode(value)
+    return confirmedMissingClassCodes.has(normalized)
+  }
+
   const allResolved =
     unresolvedAssets.length === 0 ||
-    unresolvedAssets.every((asset) => {
-      const resolution = asset.resolution
-      if (!resolution) return false
-      if (resolution.action === 'create') {
-        return Boolean(resolution.assetClassId && (resolution.name?.trim() ?? asset.ticker))
-      }
-      return Boolean(resolution.existingAssetId)
-    })
+    (!missingClassHasErrors &&
+      unresolvedAssets.every((asset) => {
+        const resolution = asset.resolution
+        if (!resolution) return false
+        if (resolution.action === 'create') {
+          return Boolean(
+            resolution.name?.trim() &&
+              resolution.category &&
+              classSelectionAllowed(resolution.assetClassId, asset),
+          )
+        }
+        return Boolean(resolution.existingAssetId)
+      }))
 
   const updateResolution = (
     ticker: string,
@@ -146,6 +277,22 @@ function NegociacaoWizardCard() {
     )
   }
 
+  const initializeAssetResolutions = (
+    response: AnalyzeNegociacaoResponse,
+    initialMissingClasses: MissingClassDraft[],
+  ) => {
+    const initialized = response.unresolvedAssets.map((asset) => ({
+      ...asset,
+      resolution: {
+        action: 'create' as const,
+        name: asset.ticker,
+        assetClassId: pickClassForAsset(asset.inferredClass, response.availableClasses, initialMissingClasses),
+        category: asset.inferredCategory ?? undefined,
+      },
+    }))
+    setUnresolvedAssets(initialized)
+  }
+
   const handleAnalyze = (formData: FormData) => {
     setError(null)
     startTransition(async () => {
@@ -154,12 +301,19 @@ function NegociacaoWizardCard() {
         setError(response.error)
         setAnalysis(null)
         setUnresolvedAssets([])
+        setMissingClasses([])
         setStep(1)
         return
       }
 
+      const initialMissingClasses = response.missingClasses.map((missingClass) => ({
+        ...missingClass,
+        confirmAutoCreate: true,
+      }))
+
       setAnalysis(response)
-      setUnresolvedAssets(response.unresolvedAssets)
+      setMissingClasses(initialMissingClasses)
+      initializeAssetResolutions(response, initialMissingClasses)
       setStep(response.unresolvedAssets.length > 0 ? 2 : 3)
     })
   }
@@ -168,16 +322,59 @@ function NegociacaoWizardCard() {
     setUnresolvedAssets((current) =>
       current.map((asset) => {
         if (asset.inferredClass !== 'FII') return asset
+
         return {
           ...asset,
           resolution: {
             action: 'create',
-            assetClassId: 'FII',
+            assetClassId: pickClassForAsset('FII', availableClasses, missingClasses),
             name: asset.ticker,
+            category: 'FII',
           },
         }
       }),
     )
+  }
+
+  const handleUpdateMissingClass = (
+    inferredCode: string,
+    patch: Partial<Pick<MissingClassDraft, 'name' | 'code' | 'description' | 'confirmAutoCreate'>>,
+  ) => {
+    setMissingClasses((current) =>
+      current.map((missingClass) =>
+        missingClass.inferredCode === inferredCode
+          ? {
+              ...missingClass,
+              ...patch,
+            }
+          : missingClass,
+      ),
+    )
+
+    if ('confirmAutoCreate' in patch || 'code' in patch) {
+      setUnresolvedAssets((current) =>
+        current.map((asset) => {
+          const missingDraft = findMissingDraftForAsset(asset, missingClasses)
+          if (!missingDraft || missingDraft.inferredCode !== inferredCode) {
+            return asset
+          }
+
+          const mergedDraft = { ...missingDraft, ...patch }
+          const nextClassId = mergedDraft.confirmAutoCreate
+            ? normalizeClassCode(mergedDraft.code)
+            : availableClasses.find((assetClass) => assetClass.code?.toUpperCase() === normalizeClassCode(inferredCode))?.id
+
+          if (asset.resolution?.action !== 'create') return asset
+          return {
+            ...asset,
+            resolution: {
+              ...asset.resolution,
+              assetClassId: nextClassId,
+            },
+          }
+        }),
+      )
+    }
   }
 
   const handleConfirmImport = () => {
@@ -185,6 +382,14 @@ function NegociacaoWizardCard() {
 
     const payload: ConfirmImportPayload = {
       readyRows: analysis.ready,
+      classesToCreate: missingClasses
+        .filter((missingClass) => missingClass.confirmAutoCreate)
+        .map((missingClass) => ({
+          inferredCode: missingClass.inferredCode,
+          name: missingClass.name.trim(),
+          code: normalizeClassCode(missingClass.code),
+          description: missingClass.description?.trim() || undefined,
+        })),
       resolutions: unresolvedAssets,
     }
 
@@ -204,6 +409,7 @@ function NegociacaoWizardCard() {
 
   const createList = unresolvedAssets.filter((asset) => asset.resolution?.action === 'create')
   const associateList = unresolvedAssets.filter((asset) => asset.resolution?.action === 'associate')
+  const classesToCreateList = missingClasses.filter((missingClass) => missingClass.confirmAutoCreate)
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -243,6 +449,75 @@ function NegociacaoWizardCard() {
             <p>Configure cada ativo antes de importar as transações.</p>
           </div>
 
+          {missingClasses.length > 0 && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 space-y-3">
+              <p className="text-sm font-semibold text-amber-900">⚠️ Novas classes de ativos serão criadas</p>
+              <p className="text-sm text-amber-800">
+                As classes abaixo não existem no sistema e podem ser criadas automaticamente antes dos ativos.
+              </p>
+
+              {missingClasses.map((missingClass) => {
+                const normalizedCode = normalizeClassCode(missingClass.code)
+                const hasDuplicateCode = duplicateMissingCodes.has(normalizedCode)
+                return (
+                  <div key={missingClass.inferredCode} className="rounded-lg border border-amber-200 bg-white p-3 space-y-2">
+                    <p className="text-sm font-semibold text-gray-900">🏷️ {missingClass.name}</p>
+                    <p className="text-sm text-gray-600">"{missingClass.description || missingClass.suggestedDescription}"</p>
+                    <p className="text-sm text-gray-600">Afeta: {formatAffectedTickers(missingClass.affectedTickers)}</p>
+
+                    <div className="grid gap-2 md:grid-cols-3">
+                      <input
+                        className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                        value={missingClass.name}
+                        onChange={(event) =>
+                          handleUpdateMissingClass(missingClass.inferredCode, { name: event.target.value })
+                        }
+                        placeholder="Nome"
+                      />
+                      <input
+                        className={[
+                          'rounded-md border px-3 py-2 text-sm',
+                          hasDuplicateCode ? 'border-red-300 bg-red-50' : 'border-gray-300',
+                        ].join(' ')}
+                        value={missingClass.code}
+                        onChange={(event) =>
+                          handleUpdateMissingClass(missingClass.inferredCode, { code: event.target.value })
+                        }
+                        placeholder="Código"
+                      />
+                      <input
+                        className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                        value={missingClass.description ?? ''}
+                        onChange={(event) =>
+                          handleUpdateMissingClass(missingClass.inferredCode, { description: event.target.value })
+                        }
+                        placeholder="Descrição"
+                      />
+                    </div>
+
+                    {hasDuplicateCode && (
+                      <p className="text-xs text-red-700">Código duplicado ou já existente no sistema.</p>
+                    )}
+                  </div>
+                )
+              })}
+
+              <label className="flex items-center gap-2 text-sm text-amber-900">
+                <input
+                  type="checkbox"
+                  checked={missingClasses.every((missingClass) => missingClass.confirmAutoCreate)}
+                  onChange={(event) => {
+                    const checked = event.target.checked
+                    setMissingClasses((current) =>
+                      current.map((missingClass) => ({ ...missingClass, confirmAutoCreate: checked })),
+                    )
+                  }}
+                />
+                ✅ Confirmar criação automática das classes acima
+              </label>
+            </div>
+          )}
+
           {unresolvedOnlyFii.length > 0 && (
             <button
               type="button"
@@ -272,8 +547,10 @@ function NegociacaoWizardCard() {
                       onChange={() =>
                         updateResolution(asset.ticker, {
                           action: 'create',
-                          assetClassId: toAssetClassCode(asset.inferredClass),
+                          assetClassId:
+                            resolution?.assetClassId ?? pickClassForAsset(asset.inferredClass, availableClasses, missingClasses),
                           name: resolution?.name ?? asset.ticker,
+                          category: resolution?.category ?? asset.inferredCategory ?? undefined,
                         })
                       }
                     />
@@ -281,7 +558,7 @@ function NegociacaoWizardCard() {
                   </label>
 
                   {selectedAction === 'create' && (
-                    <div className="ml-6 grid gap-2 md:grid-cols-2">
+                    <div className="ml-6 grid gap-2 md:grid-cols-3">
                       <input
                         className="rounded-md border border-gray-300 px-3 py-2 text-sm"
                         placeholder="Nome do ativo"
@@ -289,26 +566,56 @@ function NegociacaoWizardCard() {
                         onChange={(event) =>
                           updateResolution(asset.ticker, {
                             action: 'create',
-                            assetClassId: resolution?.assetClassId ?? toAssetClassCode(asset.inferredClass),
+                            assetClassId:
+                              resolution?.assetClassId ?? pickClassForAsset(asset.inferredClass, availableClasses, missingClasses),
                             name: event.target.value,
+                            category: resolution?.category ?? asset.inferredCategory ?? undefined,
                           })
                         }
                       />
                       <select
                         className="rounded-md border border-gray-300 px-3 py-2 text-sm"
-                        value={resolution?.assetClassId ?? toAssetClassCode(asset.inferredClass) ?? ''}
+                        value={resolution?.assetClassId ?? pickClassForAsset(asset.inferredClass, availableClasses, missingClasses) ?? ''}
                         onChange={(event) =>
                           updateResolution(asset.ticker, {
                             action: 'create',
                             assetClassId: event.target.value,
                             name: resolution?.name ?? asset.ticker,
+                            category: resolution?.category ?? asset.inferredCategory ?? undefined,
                           })
                         }
                       >
                         <option value="">Selecione a classe</option>
-                        {asset.availableClasses.map((classCode) => (
-                          <option key={`${asset.ticker}-${classCode}`} value={classCode}>
-                            {classCode}
+                        {availableClasses.map((assetClass) => (
+                          <option key={assetClass.id} value={assetClass.id}>
+                            {classLabel(assetClass)}
+                          </option>
+                        ))}
+                        {missingClasses
+                          .filter((missingClass) => missingClass.confirmAutoCreate)
+                          .map((missingClass) => (
+                            <option key={`missing-${missingClass.inferredCode}`} value={normalizeClassCode(missingClass.code)}>
+                              {missingClass.name} ({normalizeClassCode(missingClass.code)})
+                            </option>
+                          ))}
+                      </select>
+                      <select
+                        className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                        value={resolution?.category ?? ''}
+                        onChange={(event) =>
+                          updateResolution(asset.ticker, {
+                            action: 'create',
+                            assetClassId:
+                              resolution?.assetClassId ?? pickClassForAsset(asset.inferredClass, availableClasses, missingClasses),
+                            name: resolution?.name ?? asset.ticker,
+                            category: event.target.value as NonNullable<SerializableUnresolvedAsset['resolution']>['category'],
+                          })
+                        }
+                      >
+                        <option value="">Selecione a categoria</option>
+                        {ASSET_CATEGORY_OPTIONS.map((category) => (
+                          <option key={`${asset.ticker}-${category.value}`} value={category.value}>
+                            {category.label}
                           </option>
                         ))}
                       </select>
@@ -332,14 +639,13 @@ function NegociacaoWizardCard() {
 
                   {selectedAction === 'associate' && (
                     <div className="ml-6">
-                      <input
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                        placeholder="Buscar (informe o ID do ativo existente)"
-                        value={resolution?.existingAssetId ?? ''}
-                        onChange={(event) =>
+                      <AssetSearchCombobox
+                        assets={existingAssets}
+                        value={resolution?.existingAssetId ?? null}
+                        onChange={(assetId) =>
                           updateResolution(asset.ticker, {
                             action: 'associate',
-                            existingAssetId: event.target.value,
+                            existingAssetId: assetId,
                           })
                         }
                       />
@@ -377,15 +683,21 @@ function NegociacaoWizardCard() {
       {step === 3 && analysis && (
         <div className="mt-4 space-y-3">
           <div className="rounded-lg border border-gray-200 p-3 text-sm text-gray-700 space-y-1">
-            <p>✅ {analysis.ready.length} transações prontas para importar</p>
+            <p>🏷️ {classesToCreateList.length} classe(s) de ativo serão criadas:</p>
+            {classesToCreateList.map((missingClass) => (
+              <p key={`class-${missingClass.inferredCode}`}>• {missingClass.name} (código: {normalizeClassCode(missingClass.code)})</p>
+            ))}
             <p>🆕 {createList.length} ativos serão cadastrados</p>
             {createList.map((asset) => (
-              <p key={`create-${asset.ticker}`}>• {asset.ticker} → {asset.resolution?.assetClassId ?? 'N/A'} (criar novo)</p>
+              <p key={`create-${asset.ticker}`}>
+                • {asset.ticker} → {asset.resolution?.assetClassId ?? 'N/A'} ({asset.resolution?.category ?? 'sem categoria'})
+              </p>
             ))}
             <p>🔗 {associateList.length} ativos serão associados a cadastros existentes</p>
             {associateList.map((asset) => (
               <p key={`associate-${asset.ticker}`}>• {asset.ticker} → {asset.resolution?.existingAssetId}</p>
             ))}
+            <p>✅ {analysis.ready.length} transações prontas para importar</p>
             <p className="pt-1 text-gray-500">
               Total de linhas analisadas: {analysis.summary.totalRows} ({analysis.summary.readyCount} prontas + {unresolvedTransactionCount} pendentes)
             </p>
@@ -426,6 +738,7 @@ function NegociacaoWizardCard() {
                 setStep(1)
                 setAnalysis(null)
                 setUnresolvedAssets([])
+                setMissingClasses([])
                 setResult(null)
               }}
               className="rounded-lg border border-emerald-400 bg-white px-3 py-2 text-sm font-medium text-emerald-700"
@@ -447,12 +760,6 @@ function NegociacaoWizardCard() {
       )}
     </div>
   )
-}
-
-function toAssetClassCode(inferred: SerializableUnresolvedAsset['inferredClass']): string | undefined {
-  if (!inferred) return undefined
-  if (inferred === 'ACAO') return 'ACOES'
-  return inferred
 }
 
 export default function ImportPageClient() {

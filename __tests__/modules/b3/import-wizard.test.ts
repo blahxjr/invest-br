@@ -16,6 +16,7 @@ let accountId: string
 let existingAssetId: string
 let fiiClassId: string
 let stockClassId: string
+let customClassCode: string
 const suiteId = uniqueSuffix()
 
 const createdTickers: string[] = []
@@ -79,6 +80,7 @@ beforeAll(async () => {
     create: { name: 'Acoes', code: 'ACOES' },
   })
   stockClassId = stockClass.id
+  customClassCode = `ETF_${suiteId.slice(0, 4).toUpperCase()}`
 
   const existingTicker = uniqueTicker('B3EX')
   createdTickers.push(existingTicker)
@@ -98,6 +100,7 @@ afterAll(async () => {
   await safeDeleteMany(prisma.ledgerEntry, { accountId })
   await safeDeleteMany(prisma.transaction, { accountId })
   await safeDeleteMany(prisma.asset, { ticker: { in: createdTickers } })
+  await safeDeleteMany(prisma.assetClass, { code: customClassCode })
   await safeDeleteMany(prisma.account, { id: accountId })
   await safeDeleteMany(prisma.client, { id: clientId })
   await safeDeleteMany(prisma.institution, { id: institutionId })
@@ -133,7 +136,7 @@ describe('analyzeNegociacaoRows', () => {
 })
 
 describe('confirmAndImportNegociacaoForUser', () => {
-  it('cria Asset antes de persistir Transaction', async () => {
+  it('cria AssetClass antes de criar Asset e Transaction', async () => {
     const ticker = uniqueTicker('BRCO')
     createdTickers.push(ticker)
 
@@ -141,20 +144,30 @@ describe('confirmAndImportNegociacaoForUser', () => {
       ticker,
       suggestedName: `${ticker} - FII`,
       inferredClass: 'FII',
-      availableClasses: ['FII', 'ACOES'],
+      inferredCategory: 'FII',
       rows: [buildRow(ticker)],
       resolution: {
         action: 'create',
-        assetClassId: fiiClassId,
+        assetClassId: customClassCode,
         name: ticker,
+        category: 'FII',
       },
     }
 
     const result = await confirmAndImportNegociacaoForUser(userId, {
       readyRows: [],
+      classesToCreate: [
+        {
+          inferredCode: 'ETF',
+          name: `Classe ${customClassCode}`,
+          code: customClassCode,
+          description: 'Classe criada no fluxo de importacao',
+        },
+      ],
       resolutions: [unresolved],
     })
 
+    const createdClass = await prisma.assetClass.findUnique({ where: { code: customClassCode } })
     const asset = await prisma.asset.findUnique({ where: { ticker } })
     const transaction = await prisma.transaction.findFirst({
       where: { accountId, assetId: asset?.id ?? '' },
@@ -163,11 +176,14 @@ describe('confirmAndImportNegociacaoForUser', () => {
 
     expect(result.assetsCreated).toBe(1)
     expect(result.transactionsImported).toBe(1)
+    expect(createdClass).toBeTruthy()
     expect(asset).toBeTruthy()
     expect(transaction).toBeTruthy()
 
+    const classCreatedAt = createdClass?.createdAt.getTime() ?? 0
     const assetCreatedAt = asset?.createdAt.getTime() ?? 0
     const txCreatedAt = transaction?.createdAt.getTime() ?? 0
+    expect(classCreatedAt).toBeLessThanOrEqual(assetCreatedAt)
     expect(assetCreatedAt).toBeLessThanOrEqual(txCreatedAt)
   })
 
@@ -179,22 +195,25 @@ describe('confirmAndImportNegociacaoForUser', () => {
       ticker,
       suggestedName: `${ticker} - FII`,
       inferredClass: 'FII',
-      availableClasses: ['FII'],
+      inferredCategory: 'FII',
       rows: [buildRow(ticker)],
       resolution: {
         action: 'create',
         assetClassId: 'FII',
         name: ticker,
+        category: 'FII',
       },
     }
 
     const first = await confirmAndImportNegociacaoForUser(userId, {
       readyRows: [],
+      classesToCreate: [],
       resolutions: [unresolved],
     })
 
     const second = await confirmAndImportNegociacaoForUser(userId, {
       readyRows: [],
+      classesToCreate: [],
       resolutions: [unresolved],
     })
 

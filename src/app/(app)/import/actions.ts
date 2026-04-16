@@ -4,9 +4,12 @@ import { auth } from '@/lib/auth'
 import {
   analyzeNegociacaoRows,
   confirmAndImportNegociacaoForUser,
+  type AssetClassOption,
   type AnalyzeNegociacaoResult,
   type ConfirmImportResult,
+  type ExistingAssetOption,
   type ImportPayload,
+  type MissingClass,
   importMovimentacaoRows,
   importNegociacaoRows,
   importPosicaoRows,
@@ -37,19 +40,53 @@ export type SerializableUnresolvedAsset = {
   ticker: string
   suggestedName: string
   inferredClass: 'FII' | 'ETF' | 'ACAO' | 'RENDA_FIXA' | null
-  availableClasses: string[]
+  inferredCategory:
+    | 'STOCK'
+    | 'FII'
+    | 'ETF'
+    | 'FIXED_INCOME'
+    | 'FUND'
+    | 'CRYPTO'
+    | 'METAL'
+    | 'REAL_ESTATE'
+    | 'CASH'
+    | 'BDR'
+    | null
   rows: SerializableParsedRow[]
   resolution?: {
     action: 'create' | 'associate'
     assetClassId?: string
     existingAssetId?: string
     name?: string
+    category?:
+      | 'STOCK'
+      | 'FII'
+      | 'ETF'
+      | 'FIXED_INCOME'
+      | 'FUND'
+      | 'CRYPTO'
+      | 'METAL'
+      | 'REAL_ESTATE'
+      | 'CASH'
+      | 'BDR'
   }
 }
+
+export type SerializableMissingClass = MissingClass & {
+  name: string
+  code: string
+  description?: string
+}
+
+export type SerializableAssetClassOption = AssetClassOption
+export type SerializableAssetOption = ExistingAssetOption
 
 export type AnalyzeNegociacaoResponse = {
   ready: SerializableParsedRow[]
   unresolvedAssets: SerializableUnresolvedAsset[]
+  missingClasses: SerializableMissingClass[]
+  availableClasses: SerializableAssetClassOption[]
+  existingAssets: SerializableAssetOption[]
   summary: {
     totalRows: number
     readyCount: number
@@ -61,6 +98,12 @@ export type AnalyzeNegociacaoResponse = {
 
 export type ConfirmImportPayload = {
   readyRows: SerializableParsedRow[]
+  classesToCreate: Array<{
+    inferredCode: string
+    name: string
+    code: string
+    description?: string
+  }>
   resolutions: SerializableUnresolvedAsset[]
 }
 
@@ -112,6 +155,12 @@ function sheetRowsForNegociacao(workbook: XLSX.WorkBook): Array<Array<string | n
 function serializeAnalyzeResult(result: AnalyzeNegociacaoResult): AnalyzeNegociacaoResponse {
   return {
     ...result,
+    missingClasses: result.missingClasses.map((missingClass) => ({
+      ...missingClass,
+      name: missingClass.suggestedName,
+      code: missingClass.inferredCode === 'ACAO' ? 'ACOES' : missingClass.inferredCode,
+      description: missingClass.suggestedDescription,
+    })),
     ready: result.ready.map((row) => ({ ...row, date: row.date.toISOString() })),
     unresolvedAssets: result.unresolvedAssets.map((asset) => ({
       ...asset,
@@ -123,6 +172,7 @@ function serializeAnalyzeResult(result: AnalyzeNegociacaoResult): AnalyzeNegocia
 function toImportPayload(payload: ConfirmImportPayload): ImportPayload {
   return {
     readyRows: payload.readyRows.map((row) => ({ ...row, date: new Date(row.date) })),
+    classesToCreate: payload.classesToCreate,
     resolutions: payload.resolutions.map((asset) => ({
       ...asset,
       rows: asset.rows.map((row) => ({ ...row, date: new Date(row.date) })),
@@ -204,6 +254,9 @@ export async function analyzeNegociacaoFile(formData: FormData): Promise<Analyze
     return {
       ready: [],
       unresolvedAssets: [],
+      missingClasses: [],
+      availableClasses: [],
+      existingAssets: [],
       summary: { totalRows: 0, readyCount: 0, unresolvedCount: 0, uniqueUnresolvedTickers: [] },
       error: 'Usuario nao autenticado',
     }
@@ -222,6 +275,9 @@ export async function analyzeNegociacaoFile(formData: FormData): Promise<Analyze
     return {
       ready: [],
       unresolvedAssets: [],
+      missingClasses: [],
+      availableClasses: [],
+      existingAssets: [],
       summary: { totalRows: 0, readyCount: 0, unresolvedCount: 0, uniqueUnresolvedTickers: [] },
       error: message,
     }
