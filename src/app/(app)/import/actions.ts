@@ -1,6 +1,7 @@
 'use server'
 
 import { auth } from '@/lib/auth'
+import { resetImportData } from '@/modules/b3/reset-service'
 import {
   analyzeNegociacaoRows,
   confirmAndImportNegociacaoForUser,
@@ -22,6 +23,7 @@ import {
   parsePosicao,
   type RawSheet,
 } from '@/modules/b3/parser'
+import { revalidatePath } from 'next/cache'
 import * as XLSX from 'xlsx'
 
 export type SerializableParsedRow = {
@@ -110,6 +112,22 @@ export type ConfirmImportPayload = {
 }
 
 export type ConfirmImportResponse = ConfirmImportResult & {
+  error?: string
+}
+
+export type ResetImportResponse = {
+  success: boolean
+  summary?: {
+    auditLogsDeleted: number
+    ledgerEntriesDeleted: number
+    incomeEventsDeleted: number
+    rentalReceiptsDeleted: number
+    transactionsDeleted: number
+    accountsDeleted: number
+    institutionsDeleted: number
+    assetsDeleted: number
+    assetClassesDeleted: number
+  }
   error?: string
 }
 
@@ -316,6 +334,48 @@ export async function confirmAndImportNegociacao(payload: ConfirmImportPayload):
       transactionsImported: 0,
       transactionsSkipped: 0,
       error: message,
+    }
+  }
+}
+
+/**
+ * Limpa os dados de importacao em ambiente de desenvolvimento/teste.
+ */
+export async function resetImportDataAction(): Promise<ResetImportResponse> {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return {
+      success: false,
+      error: 'Usuario nao autenticado',
+    }
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    return {
+      success: false,
+      error: 'Limpeza global indisponivel em producao',
+    }
+  }
+
+  try {
+    const summary = await resetImportData()
+
+    revalidatePath('/import')
+    revalidatePath('/transactions')
+    revalidatePath('/income')
+    revalidatePath('/positions')
+    revalidatePath('/accounts')
+    revalidatePath('/dashboard')
+    revalidatePath('/performance')
+
+    return {
+      success: true,
+      summary,
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Erro desconhecido ao limpar a base',
     }
   }
 }

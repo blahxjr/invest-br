@@ -8,6 +8,7 @@ const actionsMock = vi.hoisted(() => ({
   confirmAndImportNegociacao: vi.fn(),
   importMovimentacao: vi.fn(),
   importPosicao: vi.fn(),
+  resetImportDataAction: vi.fn(),
 }))
 
 vi.mock('@/app/(app)/import/actions', () => ({
@@ -15,6 +16,7 @@ vi.mock('@/app/(app)/import/actions', () => ({
   confirmAndImportNegociacao: actionsMock.confirmAndImportNegociacao,
   importMovimentacao: actionsMock.importMovimentacao,
   importPosicao: actionsMock.importPosicao,
+  resetImportDataAction: actionsMock.resetImportDataAction,
 }))
 
 function buildAnalyzeResponse() {
@@ -95,6 +97,20 @@ describe('ImportPageClient wizard', () => {
     vi.clearAllMocks()
     actionsMock.importMovimentacao.mockResolvedValue({ imported: 0, skipped: 0, errors: [] })
     actionsMock.importPosicao.mockResolvedValue({ upserted: 0, errors: [] })
+    actionsMock.resetImportDataAction.mockResolvedValue({
+      success: true,
+      summary: {
+        auditLogsDeleted: 2,
+        ledgerEntriesDeleted: 3,
+        incomeEventsDeleted: 1,
+        rentalReceiptsDeleted: 0,
+        transactionsDeleted: 4,
+        accountsDeleted: 1,
+        institutionsDeleted: 1,
+        assetsDeleted: 2,
+        assetClassesDeleted: 1,
+      },
+    })
     actionsMock.confirmAndImportNegociacao.mockResolvedValue({
       assetsCreated: 1,
       institutionsCreated: 1,
@@ -207,5 +223,22 @@ describe('ImportPageClient wizard', () => {
     await act(async () => {
       resolveImport?.({ assetsCreated: 1, institutionsCreated: 1, accountsCreated: 1, transactionsImported: 1, transactionsSkipped: 0 })
     })
+  })
+
+  it('abre confirmacao e executa limpeza da base de importacao', async () => {
+    render(<ImportPageClient />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Limpar dados de teste' }))
+
+    expect(screen.getByRole('button', { name: 'Limpar base' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Limpar base' }))
+
+    await waitFor(() => {
+      expect(actionsMock.resetImportDataAction).toHaveBeenCalledTimes(1)
+    })
+
+    expect(screen.getByText('Base limpa com sucesso.')).toBeInTheDocument()
+    expect(screen.getByText('4 transações e 2 ativos removidos.')).toBeInTheDocument()
   })
 })

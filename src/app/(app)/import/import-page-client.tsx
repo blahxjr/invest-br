@@ -6,14 +6,17 @@ import {
   confirmAndImportNegociacao,
   importMovimentacao,
   importPosicao,
+  resetImportDataAction,
   type AnalyzeNegociacaoResponse,
   type ConfirmImportPayload,
   type ConfirmImportResponse,
+  type ResetImportResponse,
   type SerializableAssetClassOption,
   type SerializableMissingClass,
   type SerializableUnresolvedAsset,
 } from './actions'
 import type { ImportResult } from '@/modules/b3/service'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { AssetSearchCombobox } from '@/components/ui/AssetSearchCombobox'
 
 type ImportAction = (formData: FormData) => Promise<ImportResult>
@@ -44,6 +47,8 @@ const ASSET_CATEGORY_OPTIONS = [
   { value: 'CASH', label: 'Caixa / Liquidez' },
   { value: 'BDR', label: 'BDR' },
 ] as const
+
+const CAN_RESET_IMPORT_DATA = process.env.NODE_ENV !== 'production'
 
 function ResultBox({ result }: { result: ImportResult | null }) {
   if (!result) return null
@@ -114,6 +119,78 @@ function ImportCard({ title, description, submitLabel, action, onFinished }: Imp
 
       <ResultBox result={result} />
     </div>
+  )
+}
+
+function ResetImportDataCard() {
+  const [openConfirm, setOpenConfirm] = useState(false)
+  const [result, setResult] = useState<ResetImportResponse | null>(null)
+  const [isPending, startTransition] = useTransition()
+
+  const handleConfirm = () => {
+    startTransition(async () => {
+      const response = await resetImportDataAction()
+      setResult(response)
+      if (response.success) {
+        setOpenConfirm(false)
+      }
+    })
+  }
+
+  return (
+    <>
+      <div className="rounded-xl border border-red-200 bg-red-50 p-5">
+        <h2 className="text-lg font-semibold text-red-900">Limpar base de importação</h2>
+        <p className="mt-1 text-sm text-red-800">
+          Remove transações, lançamentos, proventos, contas, instituições e ativos importados para deixar o ambiente limpo para novos testes.
+        </p>
+        <p className="mt-2 text-xs text-red-700">
+          Disponível apenas fora de produção. Usuários, clientes e carteiras são preservados.
+        </p>
+
+        <button
+          type="button"
+          onClick={() => setOpenConfirm(true)}
+          disabled={isPending}
+          className="mt-4 inline-flex items-center justify-center rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-300"
+        >
+          {isPending ? 'Limpando...' : 'Limpar dados de teste'}
+        </button>
+
+        {result && (
+          <div
+            className={[
+              'mt-3 rounded-lg border p-3 text-sm',
+              result.success
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                : 'border-red-200 bg-red-100 text-red-800',
+            ].join(' ')}
+          >
+            {result.success && result.summary ? (
+              <div className="space-y-1">
+                <p className="font-medium">Base limpa com sucesso.</p>
+                <p>{result.summary.transactionsDeleted} transações e {result.summary.assetsDeleted} ativos removidos.</p>
+                <p>{result.summary.accountsDeleted} contas e {result.summary.institutionsDeleted} instituições removidas.</p>
+              </div>
+            ) : (
+              <p>{result.error ?? 'Falha ao limpar a base.'}</p>
+            )}
+          </div>
+        )}
+      </div>
+
+      <ConfirmDialog
+        open={openConfirm}
+        title="Limpar base de importação"
+        description="Isso apagará todos os dados de investimento importados do ambiente atual. Use apenas para testes locais."
+        variant="danger"
+        confirmText="Limpar base"
+        cancelText="Cancelar"
+        isLoading={isPending}
+        onConfirm={handleConfirm}
+        onCancel={() => setOpenConfirm(false)}
+      />
+    </>
   )
 }
 
@@ -849,6 +926,8 @@ export default function ImportPageClient() {
       )}
 
       <NegociacaoWizardCard />
+
+      {CAN_RESET_IMPORT_DATA && <ResetImportDataCard />}
 
       <ImportCard
         title="Movimentação"

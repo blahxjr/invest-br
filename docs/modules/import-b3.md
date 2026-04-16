@@ -150,6 +150,7 @@ export async function syncPosicao(rows: PosicaoRow[]): Promise<SyncResult>
 | `importNegociacao(formData)` | arquivo `.xlsx` | `{ imported, skipped, errors }` |
 | `importMovimentacao(formData)` | arquivo `.xlsx` | `{ imported, skipped, errors }` |
 | `importPosicao(formData)` | arquivo `.xlsx` | `{ upserted, errors }` |
+| `resetImportDataAction()` | sem input | `{ success, summary?, error? }` |
 
 Fluxo interno:
 1. Ler arquivo com `xlsx` (SheetJS)
@@ -174,6 +175,8 @@ Cada `ImportCard` expõe:
 - Botão "Importar"
 - Toast com resultado (`X importadas, Y ignoradas`)
 
+Em ambiente de desenvolvimento/teste, a página também exibe uma seção destrutiva de limpeza da base de importação com confirmação explícita. Essa ação preserva usuários, clientes e carteiras, mas remove os dados de investimento para reexecutar cenários de importação com ambiente limpo.
+
 ---
 
 ## Navegação
@@ -190,6 +193,37 @@ Item **"Importar B3"** adicionado na `Sidebar.tsx` entre **Movimentações** e *
 ```
 
 SheetJS — leve, sem dependência de stream, funciona em Server Actions Next.js.
+
+## Reset de Base para Testes
+
+Comando disponível no `package.json`:
+
+```bash
+pnpm db:reset-import
+```
+
+Opção não interativa para automação local:
+
+```bash
+pnpm db:reset-import -- --force
+```
+
+Escopo removido pelo reset:
+- `AuditLog`
+- `LedgerEntry`
+- `IncomeEvent`
+- `RentalReceipt`
+- `Transaction`
+- `Account`
+- `Institution`
+- `Asset` com ticker
+- `AssetClass` órfã
+
+Escopo preservado:
+- `User`
+- `Client`
+- `Portfolio`
+- tabelas de autenticação do NextAuth
 
 ---
 
