@@ -1,86 +1,114 @@
 import { Suspense } from 'react'
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { TrendingUp, Wallet, DollarSign, BarChart3 } from 'lucide-react'
-import PositionCard from '@/components/PositionCard'
-import IncomeCard from '@/components/IncomeCard'
+import { TrendingUp, TrendingDown, Wallet, DollarSign, BarChart3, Calendar } from 'lucide-react'
 import { EmptyState } from '@/components/ui/EmptyState'
 import DashboardClient from './dashboard-client'
-import { getDashboardData } from './data'
+import { getPortfolioSummary } from '@/modules/positions/service'
+import { auth } from '@/lib/auth'
+import { redirect } from 'next/navigation'
 
 export const metadata: Metadata = {
   title: 'Dashboard | Invest BR',
 }
 
-function formatCurrency(value: number) {
-  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+function formatCurrency(value: number | string) {
+  const num = typeof value === 'string' ? parseFloat(value) : value
+  return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
+function formatDate(date: Date) {
+  return date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
 }
 
 async function DashboardContent() {
-  let data
+  const session = await auth()
+  if (!session?.user?.id) {
+    redirect('/login')
+  }
+
+  let summary
   try {
-    data = await getDashboardData()
+    summary = await getPortfolioSummary(session.user.id)
   } catch {
-    data = {
-      totalPortfolioCost: { toString: () => '0' },
-      totalCurrentValue: { toString: () => '0' },
+    summary = {
+      totalCost: { toString: () => '0' },
+      totalValue: { toString: () => '0' },
+      totalGainLoss: { toString: () => '0' },
+      totalGainLossPct: 0,
       assetCount: 0,
-      totalQuantity: { toString: () => '0' },
-      totalIncomeMonth: { toString: () => '0' },
-      top5Positions: [],
-      allocationByCategory: [],
-      recentIncome: [],
-      alertsSummary: { total: 0, critical: 0, warning: 0, info: 0 },
+      monthlyIncome: { toString: () => '0' },
+      topPositions: [],
+      allocationByClass: [],
     }
   }
 
-  // Serializa Decimal → number para KPIs
-  const totalCost = parseFloat(data.totalPortfolioCost.toString())
-  const totalCurrentValue = parseFloat(data.totalCurrentValue.toString())
-  const totalIncomeMonth = parseFloat(data.totalIncomeMonth.toString())
+  // Se não há posições, mostra EmptyState
+  if (summary.assetCount === 0) {
+    return (
+      <EmptyState
+        icon="📊"
+        title="Sua carteira está vazia"
+        description="Importe sua planilha de negociações B3 para começar"
+        action={{ label: 'Importar B3', href: '/import' }}
+      />
+    )
+  }
 
-  // Serializa Decimal → string para o Client Component (não serializável pelo Next.js)
-  const allocationForClient = data.allocationByCategory.map((item) => ({
-    category: item.category,
+  // Serializa Decimal → number/string
+  const totalCostNum = parseFloat(summary.totalCost.toString())
+  const totalValueNum = parseFloat(summary.totalValue.toString())
+  const totalGainLossNum = parseFloat(summary.totalGainLoss.toString())
+  const monthlyIncomeNum = parseFloat(summary.monthlyIncome.toString())
+
+  // Monta array de alocação para o gráfico
+  const allocationForClient = summary.allocationByClass.map((item) => ({
+    category: item.className,
     value: item.value.toFixed(2),
-    percentage: item.percentage.toFixed(1),
+    percentage: item.pct.toFixed(1),
   }))
 
+  // 4 KPIs principais
   const stats = [
     {
-      label: 'Patrimônio (Custo Total)',
-      value: formatCurrency(totalCost),
+      label: 'Patrimônio Total',
+      value: formatCurrency(totalValueNum),
+      subtitle: `Custo total: ${formatCurrency(totalCostNum)}`,
       icon: Wallet,
       color: 'text-blue-600',
       bg: 'bg-blue-50',
     },
     {
-      label: 'Valor de Mercado',
-      value: formatCurrency(totalCurrentValue),
-      icon: TrendingUp,
-      color: 'text-indigo-600',
-      bg: 'bg-indigo-50',
+      label: 'Rendimento Total',
+      value: formatCurrency(totalGainLossNum),
+      subtitle: `${summary.totalGainLossPct.toFixed(2)}%`,
+      icon: totalGainLossNum >= 0 ? TrendingUp : TrendingDown,
+      color: totalGainLossNum >= 0 ? 'text-green-600' : 'text-red-600',
+      bg: totalGainLossNum >= 0 ? 'bg-green-50' : 'bg-red-50',
     },
     {
-      label: 'Ativos em carteira',
-      value: `${data.assetCount} ativos`,
+      label: 'Ativos',
+      value: `${summary.assetCount}`,
+      subtitle: 'ativos na carteira',
       icon: BarChart3,
       color: 'text-purple-600',
       bg: 'bg-purple-50',
     },
     {
-      label: 'Rendimentos do mês',
-      value: formatCurrency(totalIncomeMonth),
+      label: 'Proventos no Mês',
+      value: formatCurrency(monthlyIncomeNum),
+      subtitle: `Mês de ${formatDate(new Date())}`,
       icon: DollarSign,
-      color: 'text-green-600',
-      bg: 'bg-green-50',
+      color: 'text-amber-600',
+      bg: 'bg-amber-50',
     },
   ]
 
   return (
     <>
+      {/* 1. KPIs — 4 cards em grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {stats.map(({ label, value, icon: Icon, color, bg }) => (
+        {stats.map(({ label, value, subtitle, icon: Icon, color, bg }) => (
           <div key={label} className="bg-white rounded-xl border border-gray-200 p-5">
             <div className="flex items-center justify-between mb-3">
               <p className="text-sm text-gray-500">{label}</p>
@@ -89,91 +117,66 @@ async function DashboardContent() {
               </div>
             </div>
             <p className="text-2xl font-bold text-gray-900">{value}</p>
+            <p className="text-xs text-gray-500 mt-1">{subtitle}</p>
           </div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="col-span-full lg:col-span-2">
-          <DashboardClient items={allocationForClient} />
-        </div>
-
-        {/* Top 5 posições */}
+        {/* 5. TOP 5 POSIÇÕES */}
         <div className="lg:col-span-2">
-          <h2 className="text-base font-semibold text-gray-900 mb-3">Top 5 Posições</h2>
-          {data.top5Positions.length === 0 ? (
-            <EmptyState
-              icon="📊"
-              title="Sua carteira está vazia"
-              description="Importe um extrato da B3 ou adicione transações manualmente."
-              action={{ label: 'Importar da B3', href: '/import' }}
-            />
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {data.top5Positions.map((pos) => (
-                <PositionCard
-                  key={pos.ticker}
-                  ticker={pos.ticker}
-                  name={pos.name}
-                  quantity={parseFloat(pos.quantity.toString())}
-                  averageCost={parseFloat(pos.avgCost.toString())}
-                  totalCost={parseFloat(pos.totalCost.toString())}
-                  currentPrice={pos.currentPrice}
-                  currentValue={pos.currentValue ? parseFloat(pos.currentValue.toString()) : null}
-                  gainLoss={pos.gainLoss ? parseFloat(pos.gainLoss.toString()) : null}
-                  gainLossPercent={pos.gainLossPercent ? parseFloat(pos.gainLossPercent.toString()) : null}
-                  quoteChangePct={pos.quoteChangePct}
-                  category={pos.category}
-                />
-              ))}
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Top 5 Posições</h2>
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-6 py-3 text-left font-semibold text-gray-700">Ticker</th>
+                    <th className="px-6 py-3 text-left font-semibold text-gray-700">Nome</th>
+                    <th className="px-6 py-3 text-left font-semibold text-gray-700">Classe</th>
+                    <th className="px-6 py-3 text-right font-semibold text-gray-700">Qtd</th>
+                    <th className="px-6 py-3 text-right font-semibold text-gray-700">Valor Atual</th>
+                    <th className="px-6 py-3 text-right font-semibold text-gray-700">% Carteira</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {summary.topPositions.map((pos) => {
+                    const value = pos.currentValue ? parseFloat(pos.currentValue) : parseFloat(pos.totalCost)
+                    const alloc = parseFloat(pos.allocationPct)
+                    return (
+                      <tr key={pos.ticker} className="hover:bg-gray-50">
+                        <td className="px-6 py-3 font-mono font-semibold text-gray-900">{pos.ticker}</td>
+                        <td className="px-6 py-3 text-gray-700 max-w-xs truncate">{pos.name}</td>
+                        <td className="px-6 py-3 text-gray-700">{pos.assetClassCode}</td>
+                        <td className="px-6 py-3 text-right text-gray-700">{parseFloat(pos.quantity).toFixed(2)}</td>
+                        <td className="px-6 py-3 text-right font-semibold text-gray-900">{formatCurrency(value)}</td>
+                        <td className="px-6 py-3 text-right text-gray-700">{alloc.toFixed(2)}%</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
-          )}
+          </div>
+          <Link
+            href="/positions"
+            className="inline-block mt-4 text-sm text-blue-600 hover:text-blue-700 font-medium"
+          >
+            Ver todas as posições →
+          </Link>
         </div>
 
-        {/* Rendimentos recentes */}
-        <div className="col-span-full lg:col-span-1">
-          <h2 className="text-base font-semibold text-gray-900 mb-3">Últimos Rendimentos</h2>
-          {data.recentIncome.length === 0 ? (
-            <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-500 text-sm">
-              Nenhum rendimento registrado.
-            </div>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {data.recentIncome.map((income) => (
-                <IncomeCard
-                  key={income.id}
-                  type={income.type}
-                  ticker={income.ticker}
-                  grossAmount={income.grossAmount}
-                  netAmount={income.netAmount}
-                  paymentDate={income.paymentDate}
-                />
-              ))}
-            </div>
-          )}
-
-          <div className="col-span-full mt-6 bg-white rounded-xl border border-gray-200 p-5">
-            <h2 className="text-base font-semibold text-gray-900 mb-3">Alertas</h2>
-            <div className="space-y-2 text-sm">
-              <p className="text-gray-700">
-                Total: <span className="font-semibold">{data.alertsSummary.total}</span>
-              </p>
-              <p className="text-red-700">
-                Críticos: <span className="font-semibold">{data.alertsSummary.critical}</span>
-              </p>
-              <p className="text-amber-700">
-                Avisos: <span className="font-semibold">{data.alertsSummary.warning}</span>
-              </p>
-              <p className="text-blue-700">
-                Informativos: <span className="font-semibold">{data.alertsSummary.info}</span>
-              </p>
-            </div>
-            <Link
-              href="/insights/rebalance"
-              className="inline-block mt-4 text-sm text-blue-600 hover:text-blue-700 font-medium"
-            >
-              Ver análise completa →
-            </Link>
+        {/* 6. GRÁFICO DE ALOCAÇÃO */}
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Alocação por Classe</h2>
+          <DashboardClient items={allocationForClient} />
+          <div className="mt-4 space-y-2">
+            {summary.allocationByClass.map((item) => (
+              <div key={item.className} className="flex items-center justify-between text-sm">
+                <span className="text-gray-700">{item.className}</span>
+                <span className="font-semibold text-gray-900">{item.pct.toFixed(1)}%</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -190,16 +193,8 @@ function DashboardSkeleton() {
         ))}
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 grid grid-cols-2 gap-3">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="bg-gray-200 rounded-xl h-36" />
-          ))}
-        </div>
-        <div className="flex flex-col gap-3">
-          {[...Array(3)].map((_, i) => (
-            <div key={i} className="bg-gray-200 rounded-xl h-24" />
-          ))}
-        </div>
+        <div className="lg:col-span-2 bg-gray-200 rounded-xl h-80" />
+        <div className="bg-gray-200 rounded-xl h-80" />
       </div>
     </div>
   )

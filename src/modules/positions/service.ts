@@ -1,7 +1,9 @@
 import type { AssetCategory, TransactionType } from '@prisma/client'
 import Decimal from 'decimal.js'
 import { prisma } from '@/lib/prisma'
-import type { Position, PositionSummary } from './types'
+import { getQuotes } from '@/lib/quotes'
+import type { Position, PositionSummary, PortfolioSummary, SerializedPositionWithQuote } from './types'
+import { enrichWithQuotes } from './types'
 
 type PositionAsset = {
   id: string
@@ -190,4 +192,117 @@ export async function recalcPositions(accountId: string): Promise<Position[]> {
   })
 
   return calcPositions(transactions)
+}
+
+/**
+ * Calcula resumo consolidado da carteira para o dashboard.
+ * Retorna totalCost, totalValue (com cotações), gain/loss, top 5 posições,
+ * alocação por classe e rendimento do mês atual.
+ * 
+ * Reutiliza getPositions() — uma única query de transações.
+ */
+export async function getPortfolioSummary(userId: string): Promise<PortfolioSummary> {
+  // Busca todas as posições abertas
+  const positions = await getPositions(userId)
+
+  // Se não há posições, retorna summary zerado
+  if (positions.length === 0) {
+    return {
+      totalCost: new Decimal(0),
+      totalValue: new Decimal(0),
+      totalGainLoss: new Decimal(0),
+      totalGainLossPct: 0,
+      assetCount: 0,
+      monthlyIncome: new Decimal(0),
+      topPositions: [],
+      allocationByClass: [],
+    }
+  }
+
+  // Enriquece com cotações
+  const quotes = await getQuotes(positions.map((p) => p.ticker))
+  const enriched = enrichWithQuotes(positions, quotes)
+
+  // Calcula valores agregados
+  const totalCost = enriched.reduce((sum, p) => sum.plus(p.totalCost), new Decimal(0))
+  const totalValue = enriched.reduce((sum, p) => {
+    const value = p.currentValue ?? p.totalCost
+    return sum.plus(value)
+  }, new Decimal(0))
+  const totalGainLoss = totalValue.minus(totalCost)
+  const totalGainLossPct = totalCost.isZero() ? 0 : parseFloat(totalGainLoss.div(totalCost).times(100).toString())
+
+  // Top 5 por valor de mercado (com fallback para totalCost)
+  const topPositions = enriched
+    .sort((a, b) => {
+      const valueA = a.currentValue ?? a.totalCost
+      const valueB = b.currentValue ?? b.totalCost
+      return valueB.comparedTo(valueA)
+    })
+    .slice(0, 5)
+    .map((p) => ({
+      assetId: p.assetId,
+      ticker: p.ticker,
+      name: p.name,
+      category: p.category,
+      assetClassCode: p.assetClassCode,
+      quantity: p.quantity.toString(),
+      avgCost: p.avgCost.toString(),
+      totalCost: p.totalCost.toString(),
+      accountId: p.accountId,
+      accountName: p.accountName,
+      institutionId: p.institutionId,
+      institutionName: p.institutionName,
+      allocationPct: p.allocationPct.toString(),
+      currentPrice: p.currentPrice,
+      currentValue: p.currentValue?.toString() ?? null,
+      gainLoss: p.gainLoss?.toString() ?? null,
+      gainLossPercent: p.gainLossPercent?.toString() ?? null,
+      quoteChangePct: p.quoteChangePct,
+      quotedAt: p.quotedAt?.toISOString() ?? null,
+    }))
+
+  // Alocação por AssetClass (agrupado por assetClassCode)
+  const allocationMap = new Map<string, Decimal>()
+  for (const p of enriched) {
+    const code = p.assetClassCode || 'Sem classificação'
+    const value = p.currentValue ?? p.totalCost
+    allocationMap.set(code, (allocationMap.get(code) ?? new Decimal(0)).plus(value))
+  }
+
+  const allocationByClass = Array.from(allocationMap.entries())
+    .map(([className, value]) => ({
+      className,
+      value,
+      pct: totalValue.isZero() ? 0 : parseFloat(value.div(totalValue).times(100).toString()),
+    }))
+    .sort((a, b) => b.value.comparedTo(a.value))
+
+  // Rendimento do mês atual
+  const startOfMonth = new Date()
+  startOfMonth.setDate(1)
+  startOfMonth.setHours(0, 0, 0, 0)
+
+  const incomeMonth = await prisma.incomeEvent.aggregate({
+    where: {
+      account: { client: { userId } },
+      paymentDate: { gte: startOfMonth },
+    },
+    _sum: { netAmount: true },
+  })
+
+  const monthlyIncome = incomeMonth._sum.netAmount
+    ? new Decimal(incomeMonth._sum.netAmount.toString())
+    : new Decimal(0)
+
+  return {
+    totalCost,
+    totalValue,
+    totalGainLoss,
+    totalGainLossPct,
+    assetCount: positions.length,
+    monthlyIncome,
+    topPositions,
+    allocationByClass,
+  }
 }

@@ -46,6 +46,23 @@ export type AllocationItem = {
   percentage: Decimal // % do portfólio total
 }
 
+export type AllocationByClass = {
+  className: string
+  value: Decimal
+  pct: number
+}
+
+export type PortfolioSummary = {
+  totalCost: Decimal
+  totalValue: Decimal
+  totalGainLoss: Decimal
+  totalGainLossPct: number
+  assetCount: number
+  monthlyIncome: Decimal
+  topPositions: SerializedPositionWithQuote[]
+  allocationByClass: AllocationByClass[]
+}
+
 export type PositionWithQuote = Position & {
   currentPrice: number | null
   currentValue: Decimal | null
