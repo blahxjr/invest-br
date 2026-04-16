@@ -67,20 +67,32 @@ export type SerializedPositionWithQuote = SerializedPosition & {
 /**
  * Enriquece posições com cotações e métricas de P&L.
  * Calcula também allocationPct com base no totalValue de todas as posições.
+ * 
+ * Primeiro passe: calcula currentValue para cada posição
+ * Segundo passe: calcula totalValue usando currentValue (com fallback para totalCost)
+ * Terceiro passe: calcula allocationPct baseado no totalValue
  */
 export function enrichWithQuotes(
   positions: Position[],
   quotes: Map<string, QuoteResult>,
 ): PositionWithQuote[] {
-  // Calcula o total da carteira para allocationPct
-  const totalValue = positions.reduce((sum, pos) => sum.plus(pos.totalCost), new Decimal(0))
-
-  return positions.map((position) => {
+  // Primeiro passe: enriquecer com currentValue
+  const enrichedPositions = positions.map((position) => {
     const quote = quotes.get(position.ticker)
     const currentValue = quote
       ? position.quantity.times(quote.price)
       : null
+    return { position, quote, currentValue }
+  })
 
+  // Segundo passe: calcular totalValue usando currentValue quando disponível
+  const totalValue = enrichedPositions.reduce((sum, { currentValue, position }) => {
+    const valueForTotal = currentValue ?? position.totalCost
+    return sum.plus(valueForTotal)
+  }, new Decimal(0))
+
+  // Terceiro passe: montar resultado final com allocationPct correto
+  return enrichedPositions.map(({ position, quote, currentValue }) => {
     const gainLoss = currentValue
       ? currentValue.minus(position.totalCost)
       : null
@@ -91,11 +103,11 @@ export function enrichWithQuotes(
       ? gainLoss.div(position.totalCost).times(100)
       : null
 
-    // Atualizar allocationPct com base em currentValue se disponível
+    // allocationPct baseado em currentValue ou totalCost, dividido pelo totalValue
     const allocationValue = currentValue ?? position.totalCost
     const newAllocationPct = !totalValue.isZero()
       ? allocationValue.div(totalValue).times(100)
-      : position.allocationPct
+      : new Decimal(0)
 
     return {
       ...position,

@@ -41,8 +41,10 @@ function toNumber(d: { toString(): string } | null | undefined): number {
 }
 
 /**
- * Calcula a alocação percentual por categoria de ativo.
+ * Calcula a alocação percentual por categoria de ativo usando totalCost.
  * Função pura exportada para facilitar testes unitários sem banco.
+ * 
+ * @deprecated Use calcAllocationWithQuotes para alocação baseada em valor de mercado
  */
 export function calcAllocation(positions: Position[]): AllocationItem[] {
   const map = new Map<string, Decimal>()
@@ -51,6 +53,34 @@ export function calcAllocation(positions: Position[]): AllocationItem[] {
   for (const p of positions) {
     const key = p.category as string
     map.set(key, (map.get(key) ?? new Decimal(0)).plus(p.totalCost))
+  }
+
+  return Array.from(map.entries())
+    .map(([category, value]) => ({
+      category,
+      value,
+      percentage: total.isZero() ? new Decimal(0) : value.div(total).times(100),
+    }))
+    .sort((a, b) => b.value.comparedTo(a.value))
+}
+
+/**
+ * Calcula a alocação percentual por categoria de ativo usando valor de mercado (currentValue).
+ * Se não houver cotação, usa totalCost como fallback.
+ * 
+ * Esta é a função recomendada para dashboard e análises.
+ */
+export function calcAllocationWithQuotes(positions: PositionWithQuote[]): AllocationItem[] {
+  const map = new Map<string, Decimal>()
+  const total = positions.reduce((acc, p) => {
+    const value = p.currentValue ?? p.totalCost
+    return acc.plus(value)
+  }, new Decimal(0))
+
+  for (const p of positions) {
+    const key = p.category as string
+    const value = p.currentValue ?? p.totalCost
+    map.set(key, (map.get(key) ?? new Decimal(0)).plus(value))
   }
 
   return Array.from(map.entries())
@@ -84,8 +114,8 @@ export async function getDashboardData(): Promise<DashboardData> {
   // Top 5 por totalCost (getPositions já ordena por totalCost desc)
   const top5 = enriched.slice(0, 5)
 
-  // Alocação por categoria
-  const allocationByCategory = calcAllocation(positions)
+  // Alocação por categoria (usando valor de mercado)
+  const allocationByCategory = calcAllocationWithQuotes(enriched)
 
   // Proventos recentes — query separada (não é N+1)
   const incomeRaw = await prisma.incomeEvent.findMany({
