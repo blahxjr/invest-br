@@ -119,3 +119,36 @@ export async function getPositions(userId: string): Promise<Position[]> {
 
   return calcPositions(transactions)
 }
+
+/**
+ * Recalcula as posições de uma conta específica a partir das transações BUY/SELL não deletadas.
+ * Como o projeto calcula posições on-the-fly, este recálculo retorna o estado consolidado atual.
+ */
+export async function recalcPositions(accountId: string): Promise<Position[]> {
+  const transactions = await prisma.transaction.findMany({
+    where: {
+      type: { in: ['BUY', 'SELL'] },
+      accountId,
+      assetId: { not: null },
+      deletedAt: null,
+    },
+    select: {
+      type: true,
+      quantity: true,
+      totalAmount: true,
+      date: true,
+      asset: {
+        select: {
+          id: true,
+          ticker: true,
+          name: true,
+          category: true,
+          assetClass: { select: { code: true } },
+        },
+      },
+    },
+    orderBy: { date: 'asc' },
+  })
+
+  return calcPositions(transactions)
+}

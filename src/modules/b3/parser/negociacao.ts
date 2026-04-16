@@ -82,6 +82,10 @@ export function inferAssetClass(ticker: string): InferredAssetClass | null {
     return 'ACAO'
   }
 
+  if (/^\w+1$/.test(normalized) && !normalized.endsWith('11')) {
+    return 'ACAO'
+  }
+
   if (normalized.endsWith('11')) {
     return 'FII'
   }

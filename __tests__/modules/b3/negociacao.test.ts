@@ -60,7 +60,11 @@ describe('inferAssetClass', () => {
     expect(inferAssetClass('TAEE11F')).toBe('FII')
   })
 
-  it('retorna null para BEEF1', () => {
-    expect(inferAssetClass('BEEF1')).toBeNull()
+  it('classifica BEEF1 como ACAO', () => {
+    expect(inferAssetClass('BEEF1')).toBe('ACAO')
+  })
+
+  it('classifica PETR1 como ACAO', () => {
+    expect(inferAssetClass('PETR1')).toBe('ACAO')
   })
 })

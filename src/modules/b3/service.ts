@@ -1,6 +1,7 @@
 import { AssetCategory, Prisma } from '@prisma/client'
 import { createHash } from 'node:crypto'
 import { prisma } from '@/lib/prisma'
+import * as positionsService from '@/modules/positions/service'
 import { createTransaction } from '@/modules/transactions/service'
 import { inferAssetClass, type InferredAssetClass, type MovimentacaoRow, type NegociacaoRow, type PosicaoRow } from './parser'
 
@@ -87,7 +88,6 @@ export type ConfirmImportResult = {
 }
 
 type DbCategory = AssetCategory
-type TxClient = Omit<typeof prisma, '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends'>
 
 const CLASS_SUGGESTIONS: Record<string, { name: string; description: string; code: string }> = {
   FII: { name: 'Fundos Imobiliários', description: 'FIIs negociados na B3', code: 'FII' },
@@ -172,16 +172,6 @@ function buildNegociacaoIdempotencyKey(row: ParsedRow): string {
 
   const digest = createHash('sha256').update(raw).digest('hex')
   return `b3-negociacao-${digest}`
-}
-
-async function getCurrentBalance(accountId: string, tx: TxClient): Promise<Prisma.Decimal> {
-  const last = await tx.ledgerEntry.findFirst({
-    where: { accountId },
-    orderBy: { createdAt: 'desc' },
-    select: { balanceAfter: true },
-  })
-
-  return last?.balanceAfter ?? new Prisma.Decimal(0)
 }
 
 function ensureDate(value: Date | string): Date {
@@ -375,9 +365,17 @@ export async function confirmAndImportNegociacaoForUser(
     date: ensureDate(row.date),
   }))
 
-  return prisma.$transaction(async (tx) => {
+  const unresolvedRows = payload.resolutions.flatMap((asset) =>
+    asset.rows.map((row) => ({
+      ...row,
+      date: ensureDate(row.date),
+    })),
+  )
+
+  const rowsToImport: ParsedRow[] = [...normalizedReadyRows, ...unresolvedRows]
+
+  const result = await prisma.$transaction(async (tx) => {
     const resolvedAssetIdByTicker = new Map<string, string>()
-    let assetsCreated = 0
 
     for (const classInput of payload.classesToCreate) {
       const code = classInput.code.trim().toUpperCase()
@@ -399,158 +397,239 @@ export async function confirmAndImportNegociacaoForUser(
       })
     }
 
-    for (const unresolved of payload.resolutions) {
+    const associateResolutions = payload.resolutions.filter((asset) => asset.resolution?.action === 'associate')
+    for (const unresolved of associateResolutions) {
+      const existingAssetId = unresolved.resolution?.existingAssetId
+      if (!existingAssetId) {
+        throw new Error(`Ativo ${unresolved.ticker} sem existingAssetId para associação`)
+      }
+      resolvedAssetIdByTicker.set(unresolved.ticker, existingAssetId)
+    }
+
+    const createResolutions = payload.resolutions.filter((asset) => asset.resolution?.action === 'create')
+
+    const createTickers = createResolutions.map((asset) => asset.ticker)
+    const existingAssetsBefore = createTickers.length
+      ? await tx.asset.findMany({
+          where: { ticker: { in: createTickers } },
+          select: { ticker: true },
+        })
+      : []
+    const existingTickersBefore = new Set(existingAssetsBefore.map((asset) => asset.ticker ?? '').filter(Boolean))
+
+    const classCodesToResolve = Array.from(
+      new Set(
+        createResolutions
+          .map((unresolved) => unresolved.resolution?.assetClassId)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    )
+
+    const classRecords = classCodesToResolve.length
+      ? await tx.assetClass.findMany({
+          where: {
+            OR: [
+              { id: { in: classCodesToResolve } },
+              { code: { in: classCodesToResolve } },
+              { name: { in: classCodesToResolve } },
+            ],
+          },
+          select: { id: true, code: true, name: true },
+        })
+      : []
+
+    const classByAnyKey = new Map<string, { id: string; code: string | null; name: string }>()
+    for (const classRecord of classRecords) {
+      classByAnyKey.set(classRecord.id, classRecord)
+      if (classRecord.code) classByAnyKey.set(classRecord.code, classRecord)
+      classByAnyKey.set(classRecord.name, classRecord)
+    }
+
+    const assetsToCreate = createResolutions.map((unresolved) => {
       const resolution = unresolved.resolution
-      if (!resolution) {
-        throw new Error(`Ativo ${unresolved.ticker} sem resolução definida`)
-      }
-
-      if (resolution.action === 'associate') {
-        if (!resolution.existingAssetId) {
-          throw new Error(`Ativo ${unresolved.ticker} sem existingAssetId para associação`)
-        }
-        resolvedAssetIdByTicker.set(unresolved.ticker, resolution.existingAssetId)
-        continue
-      }
-
-      if (!resolution.assetClassId) {
+      if (!resolution?.assetClassId) {
         throw new Error(`Ativo ${unresolved.ticker} sem classe de ativo para criação`)
       }
 
-      const classRecord = await tx.assetClass.findFirst({
-        where: {
-          OR: [
-            { id: resolution.assetClassId },
-            { code: resolution.assetClassId },
-            { name: resolution.assetClassId },
-          ],
-        },
-        select: { id: true, code: true, name: true },
-      })
-
+      const classRecord = classByAnyKey.get(resolution.assetClassId)
       if (!classRecord) {
         throw new Error(`Classe de ativo inválida para ${unresolved.ticker}`)
       }
 
-      const existing = await tx.asset.findUnique({
-        where: { ticker: unresolved.ticker },
-        select: { id: true },
-      })
-
-      const asset = await tx.asset.upsert({
-        where: { ticker: unresolved.ticker },
-        update: {
-          name: resolution.name?.trim() || unresolved.ticker,
-          assetClassId: classRecord.id,
-          category: resolution.category ?? inferAssetCategory(unresolved.inferredClass) ?? toDbCategoryFromClassCode(classRecord.code ?? classRecord.name),
-        },
-        create: {
-          ticker: unresolved.ticker,
-          name: resolution.name?.trim() || unresolved.ticker,
-          assetClassId: classRecord.id,
-          category: resolution.category ?? inferAssetCategory(unresolved.inferredClass) ?? toDbCategoryFromClassCode(classRecord.code ?? classRecord.name),
-        },
-        select: { id: true },
-      })
-
-      if (!existing) {
-        assetsCreated++
+      return {
+        ticker: unresolved.ticker,
+        name: resolution.name?.trim() || unresolved.ticker,
+        assetClassId: classRecord.id,
+        category:
+          resolution.category
+          ?? inferAssetCategory(unresolved.inferredClass)
+          ?? toDbCategoryFromClassCode(classRecord.code ?? classRecord.name),
       }
+    })
 
-      resolvedAssetIdByTicker.set(unresolved.ticker, asset.id)
+    if (assetsToCreate.length > 0) {
+      await tx.asset.createMany({
+        data: assetsToCreate,
+        skipDuplicates: true,
+      })
     }
 
-    const unresolvedRows = payload.resolutions.flatMap((asset) =>
-      asset.rows.map((row) => ({
-        ...row,
-        date: ensureDate(row.date),
-      })),
+    const allResolvedTickers = Array.from(
+      new Set([...createResolutions.map((asset) => asset.ticker), ...associateResolutions.map((asset) => asset.ticker)]),
     )
 
-    const rowsToImport: ParsedRow[] = [...normalizedReadyRows, ...unresolvedRows]
+    if (allResolvedTickers.length > 0) {
+      const resolvedAssets = await tx.asset.findMany({
+        where: { ticker: { in: allResolvedTickers } },
+        select: { id: true, ticker: true },
+      })
+      for (const asset of resolvedAssets) {
+        if (asset.ticker) {
+          resolvedAssetIdByTicker.set(asset.ticker, asset.id)
+        }
+      }
+    }
 
-    let transactionsImported = 0
-    let transactionsSkipped = 0
-    let currentBalance = await getCurrentBalance(accountId, tx)
+    const txByReferenceId = new Map<string, {
+      referenceId: string
+      type: 'BUY' | 'SELL'
+      accountId: string
+      assetId: string
+      quantity: Prisma.Decimal
+      price: Prisma.Decimal
+      totalAmount: Prisma.Decimal
+      date: Date
+      notes: string
+      _meta: ParsedRow
+    }>()
 
     for (const row of rowsToImport) {
-      const rowAssetId = row.assetId ?? resolvedAssetIdByTicker.get(row.ticker)
-      if (!rowAssetId) {
+      const assetId = row.assetId ?? resolvedAssetIdByTicker.get(row.ticker)
+      if (!assetId) {
         throw new Error(`Não foi possível resolver ativo para ticker ${row.ticker}`)
       }
 
       const referenceId = buildNegociacaoIdempotencyKey(row)
-      const existingTx = await tx.transaction.findUnique({
-        where: { referenceId },
-        select: { id: true },
+      txByReferenceId.set(referenceId, {
+        referenceId,
+        type: row.type,
+        accountId,
+        assetId,
+        quantity: new Prisma.Decimal(row.quantity.toString()),
+        price: new Prisma.Decimal(row.price.toString()),
+        totalAmount: new Prisma.Decimal(row.total.toString()),
+        date: row.date,
+        notes: `Importacao B3 - Negociacao (${row.instituicao})`,
+        _meta: row,
       })
+    }
 
-      if (existingTx) {
-        transactionsSkipped++
-        await tx.auditLog.create({
-          data: {
-            entityType: 'TRANSACTION',
-            entityId: existingTx.id,
-            action: 'IMPORT_B3_NEGOCIACAO',
-            previousValue: null,
-            newValue: JSON.stringify({ referenceId, skipped: true }),
-            changedBy: userId,
-          },
+    const uniqueTransactionData = Array.from(txByReferenceId.values())
+    const referenceIds = uniqueTransactionData.map((txData) => txData.referenceId)
+
+    const existingTransactions = referenceIds.length
+      ? await tx.transaction.findMany({
+          where: { referenceId: { in: referenceIds } },
+          select: { id: true, referenceId: true },
         })
-        continue
+      : []
+
+    const existingReferenceIds = new Set(existingTransactions.map((transaction) => transaction.referenceId))
+
+    if (uniqueTransactionData.length > 0) {
+      await tx.transaction.createMany({
+        data: uniqueTransactionData.map((txData) => ({
+          referenceId: txData.referenceId,
+          type: txData.type,
+          accountId: txData.accountId,
+          assetId: txData.assetId,
+          quantity: txData.quantity,
+          price: txData.price,
+          totalAmount: txData.totalAmount,
+          date: txData.date,
+          notes: txData.notes,
+        })),
+        skipDuplicates: true,
+      })
+    }
+
+    const insertedReferenceIds = referenceIds.filter((referenceId) => !existingReferenceIds.has(referenceId))
+
+    const insertedTransactions = insertedReferenceIds.length
+      ? await tx.transaction.findMany({
+          where: { referenceId: { in: insertedReferenceIds } },
+          select: { id: true, referenceId: true },
+        })
+      : []
+
+    const insertedByReferenceId = new Map(
+      insertedTransactions.map((transaction) => [transaction.referenceId, transaction.id]),
+    )
+
+    const lastLedger = await tx.ledgerEntry.findFirst({
+      where: { accountId },
+      orderBy: { createdAt: 'desc' },
+      select: { balanceAfter: true },
+    })
+    let runningBalance = lastLedger?.balanceAfter ?? new Prisma.Decimal(0)
+
+    const insertedRowsOrdered = uniqueTransactionData
+      .filter((txData) => insertedByReferenceId.has(txData.referenceId))
+      .sort((a, b) => a.date.getTime() - b.date.getTime())
+
+    const ledgerEntriesToCreate = insertedRowsOrdered.map((txData) => {
+      const isDebit = txData.type === 'BUY'
+      runningBalance = isDebit
+        ? runningBalance.minus(txData.totalAmount)
+        : runningBalance.plus(txData.totalAmount)
+
+      const transactionId = insertedByReferenceId.get(txData.referenceId)
+      if (!transactionId) {
+        throw new Error(`Transaction sem ID para referência ${txData.referenceId}`)
       }
 
-      const totalAmount = new Prisma.Decimal(row.total.toString())
-      const isDebit = row.type === 'BUY'
-      currentBalance = isDebit
-        ? currentBalance.minus(totalAmount)
-        : currentBalance.plus(totalAmount)
+      return {
+        transactionId,
+        accountId,
+        debit: isDebit ? txData.totalAmount : null,
+        credit: isDebit ? null : txData.totalAmount,
+        balanceAfter: runningBalance,
+      }
+    })
 
-      const transaction = await tx.transaction.create({
-        data: {
-          referenceId,
-          type: row.type,
-          accountId,
-          assetId: rowAssetId,
-          quantity: new Prisma.Decimal(row.quantity.toString()),
-          price: new Prisma.Decimal(row.price.toString()),
-          totalAmount,
-          date: row.date,
-          notes: `Importacao B3 - Negociacao (${row.instituicao})`,
-        },
-        select: { id: true },
-      })
-
-      await tx.ledgerEntry.create({
-        data: {
-          transactionId: transaction.id,
-          accountId,
-          debit: isDebit ? totalAmount : null,
-          credit: isDebit ? null : totalAmount,
-          balanceAfter: currentBalance,
-        },
-      })
-
-      await tx.auditLog.create({
-        data: {
-          entityType: 'TRANSACTION',
-          entityId: transaction.id,
-          action: 'IMPORT_B3_NEGOCIACAO',
-          previousValue: null,
-          newValue: JSON.stringify({ referenceId, ticker: row.ticker, type: row.type }),
-          changedBy: userId,
-        },
-      })
-
-      transactionsImported++
+    if (ledgerEntriesToCreate.length > 0) {
+      await tx.ledgerEntry.createMany({ data: ledgerEntriesToCreate })
     }
+
+    const assetsCreated = assetsToCreate.filter((asset) => !existingTickersBefore.has(asset.ticker)).length
+    const transactionsImported = insertedTransactions.length
+    const transactionsSkipped = uniqueTransactionData.length - transactionsImported
 
     return {
       assetsCreated,
       transactionsImported,
       transactionsSkipped,
     }
+  }, {
+    timeout: 60000,
+    maxWait: 10000,
   })
+
+  await prisma.auditLog.create({
+    data: {
+      entityType: 'IMPORT_B3_NEGOCIACAO',
+      entityId: 'batch',
+      action: 'CREATE',
+      previousValue: null,
+      newValue: JSON.stringify({ ...result, accountId }),
+      changedBy: userId,
+      changedAt: new Date(),
+    },
+  })
+
+  await positionsService.recalcPositions(accountId)
+
+  return result
 }
 
 /**

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import ImportPageClient from '@/app/(app)/import/import-page-client'
 
 const actionsMock = vi.hoisted(() => ({
@@ -170,5 +170,31 @@ describe('ImportPageClient wizard', () => {
 
     expect(screen.getByText(/🏷️ 1 classe\(s\) de ativo serão criadas:/i)).toBeInTheDocument()
     expect(screen.getByText(/ETFs \(código: ETF\)/i)).toBeInTheDocument()
+  })
+
+  it('botao Confirmar e Importar fica desabilitado durante loading', async () => {
+    actionsMock.analyzeNegociacaoFile.mockResolvedValueOnce(buildAnalyzeResponse())
+
+    let resolveImport: ((value: { assetsCreated: number; transactionsImported: number; transactionsSkipped: number }) => void) | undefined
+    actionsMock.confirmAndImportNegociacao.mockReturnValue(
+      new Promise((resolve) => {
+        resolveImport = resolve
+      }),
+    )
+
+    render(<ImportPageClient />)
+    await submitAnalyze()
+    fireEvent.click(screen.getByRole('button', { name: 'Avançar →' }))
+
+    const confirmButton = screen.getByRole('button', { name: '✅ Confirmar e Importar' })
+    fireEvent.click(confirmButton)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '⏳ Importando...' })).toBeDisabled()
+    })
+
+    await act(async () => {
+      resolveImport?.({ assetsCreated: 1, transactionsImported: 1, transactionsSkipped: 0 })
+    })
   })
 })

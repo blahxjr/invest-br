@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import {
   analyzeNegociacaoFile,
   confirmAndImportNegociacao,
@@ -186,6 +186,9 @@ function NegociacaoWizardCard() {
   const [result, setResult] = useState<ConfirmImportResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+  const [isImporting, setIsImporting] = useState(false)
+  const [showSlowHint, setShowSlowHint] = useState(false)
+  const [importProgress, setImportProgress] = useState(0)
 
   const availableClasses = analysis?.availableClasses ?? []
   const existingAssets = analysis?.existingAssets ?? []
@@ -394,16 +397,43 @@ function NegociacaoWizardCard() {
     }
 
     setError(null)
+    setIsImporting(true)
+    setShowSlowHint(false)
+    setImportProgress(5)
     startTransition(async () => {
       const response = await confirmAndImportNegociacao(payload)
       if (response.error) {
-        setError(response.error)
+        setError('Erro na importação. Tente novamente ou reduza o número de linhas.')
+        setIsImporting(false)
+        setImportProgress(0)
         return
       }
+      setImportProgress(100)
       setResult(response)
       setStep(4)
+      setIsImporting(false)
     })
   }
+
+  useEffect(() => {
+    if (!isImporting) return
+
+    const slowTimer = setTimeout(() => {
+      setShowSlowHint(true)
+    }, 3000)
+
+    const progressTimer = setInterval(() => {
+      setImportProgress((current) => {
+        if (current >= 90) return current
+        return current + 5
+      })
+    }, 400)
+
+    return () => {
+      clearTimeout(slowTimer)
+      clearInterval(progressTimer)
+    }
+  }, [isImporting])
 
   const unresolvedTransactionCount = unresolvedAssets.reduce((acc, asset) => acc + asset.rows.length, 0)
 
@@ -714,12 +744,30 @@ function NegociacaoWizardCard() {
             <button
               type="button"
               onClick={handleConfirmImport}
-              disabled={isPending}
+              disabled={isPending || isImporting}
               className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-emerald-300"
             >
-              {isPending ? 'Importando...' : '✅ Confirmar e Importar'}
+              {isImporting ? '⏳ Importando...' : '✅ Confirmar e Importar'}
             </button>
           </div>
+
+          {isImporting && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">
+              <div className="flex items-center justify-between">
+                <span>Processando importação...</span>
+                <span>{importProgress}%</span>
+              </div>
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-blue-100">
+                <div
+                  className="h-full rounded-full bg-blue-500 transition-all"
+                  style={{ width: `${importProgress}%` }}
+                />
+              </div>
+              {showSlowHint && (
+                <p className="mt-2">Aguarde - cadastrando ativos e transações...</p>
+              )}
+            </div>
+          )}
         </div>
       )}
 
