@@ -25,6 +25,14 @@ type HistoryTransaction = {
       code: string | null
     }
   } | null
+  account: {
+    id: string
+    name: string
+    institution: {
+      id: string
+      name: string
+    }
+  }
 }
 
 function atEndOfDay(date: Date): Date {
@@ -138,12 +146,31 @@ export async function calcPatrimonyHistory(
           assetClass: { select: { code: true } },
         },
       },
+      account: {
+        select: {
+          id: true,
+          name: true,
+          institution: { select: { id: true, name: true } },
+        },
+      },
     },
     orderBy: { date: 'asc' },
   })
 
-  const firstTxDate = transactions.length > 0 ? transactions[0].date : null
+  // Map transactions to ensure account.institution fields are non-null
+  const normalizedTxs = transactions.map((tx) => ({
+    ...tx,
+    account: {
+      ...tx.account,
+      institution: {
+        id: tx.account.institution?.id ?? '',
+        name: tx.account.institution?.name ?? '',
+      },
+    },
+  }))
+
+  const firstTxDate = normalizedTxs.length > 0 ? normalizedTxs[0].date : null
   const points = buildDatePoints(period, firstTxDate)
 
-  return calcSnapshotsFromTxs(transactions, points)
+  return calcSnapshotsFromTxs(normalizedTxs, points)
 }

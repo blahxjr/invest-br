@@ -13,6 +13,11 @@ describe('enrichWithQuotes', () => {
     quantity: new Decimal(10),
     avgCost: new Decimal(30),
     totalCost: new Decimal(300),
+    accountId: 'acc-1',
+    accountName: 'Nu Invest',
+    institutionId: 'inst-1',
+    institutionName: 'Nu Pagamentos',
+    allocationPct: new Decimal(0),
   }
 
   it('calcula currentValue, gainLoss e gainLossPercent corretamente', () => {

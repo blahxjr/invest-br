@@ -20,6 +20,7 @@ export default async function PositionsPage() {
     quantity: position.quantity.toString(),
     avgCost: position.avgCost.toString(),
     totalCost: position.totalCost.toString(),
+    allocationPct: position.allocationPct.toString(),
     currentValue: position.currentValue?.toString() ?? null,
     gainLoss: position.gainLoss?.toString() ?? null,
     gainLossPercent: position.gainLossPercent?.toString() ?? null,

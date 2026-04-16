@@ -13,12 +13,22 @@ type PositionAsset = {
   }
 }
 
+type PositionAccount = {
+  id: string
+  name: string
+  institution: {
+    id: string
+    name: string
+  } | null
+}
+
 type PositionTransaction = {
   type: TransactionType
   quantity: { toString(): string } | null
   totalAmount: { toString(): string }
   date: Date
   asset: PositionAsset | null
+  account: PositionAccount
 }
 
 type PositionMap = Map<string, Position>
@@ -42,6 +52,11 @@ export function calcPositions(transactions: PositionTransaction[]): Position[] {
       quantity: new Decimal(0),
       avgCost: new Decimal(0),
       totalCost: new Decimal(0),
+      accountId: tx.account.id,
+      accountName: tx.account.name,
+      institutionId: tx.account.institution?.id ?? null,
+      institutionName: tx.account.institution?.name ?? null,
+      allocationPct: new Decimal(0), // será recalculado no enrichWithQuotes
     }
 
     const quantity = new Decimal(tx.quantity.toString())
@@ -113,6 +128,18 @@ export async function getPositions(userId: string): Promise<Position[]> {
           assetClass: { select: { code: true } },
         },
       },
+      account: {
+        select: {
+          id: true,
+          name: true,
+          institution: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      },
     },
     orderBy: { date: 'asc' },
   })
@@ -144,6 +171,18 @@ export async function recalcPositions(accountId: string): Promise<Position[]> {
           name: true,
           category: true,
           assetClass: { select: { code: true } },
+        },
+      },
+      account: {
+        select: {
+          id: true,
+          name: true,
+          institution: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
         },
       },
     },

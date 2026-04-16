@@ -18,10 +18,19 @@ describe('calcPositions', () => {
     assetClass: { code: 'FII' },
   }
 
+  const mockAccount = {
+    id: 'account-1',
+    name: 'Nu Invest',
+    institution: {
+      id: 'inst-1',
+      name: 'Nu Pagamentos',
+    },
+  }
+
   it('calcula custo medio ponderado para 2 compras do mesmo ativo', () => {
     const txs = [
-      { type: 'BUY' as const, asset: assetA, quantity: new Decimal(2), totalAmount: new Decimal('312.08'), date: new Date('2026-03-27') },
-      { type: 'BUY' as const, asset: assetA, quantity: new Decimal(2), totalAmount: new Decimal('311.68'), date: new Date('2026-03-31') },
+      { type: 'BUY' as const, asset: assetA, account: mockAccount, quantity: new Decimal(2), totalAmount: new Decimal('312.08'), date: new Date('2026-03-27') },
+      { type: 'BUY' as const, asset: assetA, account: mockAccount, quantity: new Decimal(2), totalAmount: new Decimal('311.68'), date: new Date('2026-03-31') },
     ]
 
     const result = calcPositions(txs)
@@ -33,8 +42,8 @@ describe('calcPositions', () => {
 
   it('remove ativo quando todas as cotas sao vendidas', () => {
     const txs = [
-      { type: 'BUY' as const, asset: assetA, quantity: new Decimal(5), totalAmount: new Decimal('500'), date: new Date('2026-01-01') },
-      { type: 'SELL' as const, asset: assetA, quantity: new Decimal(5), totalAmount: new Decimal('550'), date: new Date('2026-01-02') },
+      { type: 'BUY' as const, asset: assetA, account: mockAccount, quantity: new Decimal(5), totalAmount: new Decimal('500'), date: new Date('2026-01-01') },
+      { type: 'SELL' as const, asset: assetA, account: mockAccount, quantity: new Decimal(5), totalAmount: new Decimal('550'), date: new Date('2026-01-02') },
     ]
 
     const result = calcPositions(txs)
@@ -44,8 +53,8 @@ describe('calcPositions', () => {
 
   it('mantem custo medio apos venda parcial', () => {
     const txs = [
-      { type: 'BUY' as const, asset: assetA, quantity: new Decimal(10), totalAmount: new Decimal('100'), date: new Date('2026-01-01') },
-      { type: 'SELL' as const, asset: assetA, quantity: new Decimal(3), totalAmount: new Decimal('33'), date: new Date('2026-01-02') },
+      { type: 'BUY' as const, asset: assetA, account: mockAccount, quantity: new Decimal(10), totalAmount: new Decimal('100'), date: new Date('2026-01-01') },
+      { type: 'SELL' as const, asset: assetA, account: mockAccount, quantity: new Decimal(3), totalAmount: new Decimal('33'), date: new Date('2026-01-02') },
     ]
 
     const result = calcPositions(txs)
@@ -57,8 +66,8 @@ describe('calcPositions', () => {
 
   it('calcula multiplos ativos independentemente', () => {
     const txs = [
-      { type: 'BUY' as const, asset: assetA, quantity: new Decimal(2), totalAmount: new Decimal('312.08'), date: new Date('2026-01-01') },
-      { type: 'BUY' as const, asset: assetB, quantity: new Decimal(33), totalAmount: new Decimal('324.39'), date: new Date('2026-01-02') },
+      { type: 'BUY' as const, asset: assetA, account: mockAccount, quantity: new Decimal(2), totalAmount: new Decimal('312.08'), date: new Date('2026-01-01') },
+      { type: 'BUY' as const, asset: assetB, account: mockAccount, quantity: new Decimal(33), totalAmount: new Decimal('324.39'), date: new Date('2026-01-02') },
     ]
 
     const result = calcPositions(txs)
@@ -68,8 +77,8 @@ describe('calcPositions', () => {
 
   it('ordena por totalCost decrescente', () => {
     const txs = [
-      { type: 'BUY' as const, asset: assetA, quantity: new Decimal(1), totalAmount: new Decimal('100'), date: new Date('2026-01-01') },
-      { type: 'BUY' as const, asset: assetB, quantity: new Decimal(1), totalAmount: new Decimal('500'), date: new Date('2026-01-02') },
+      { type: 'BUY' as const, asset: assetA, account: mockAccount, quantity: new Decimal(1), totalAmount: new Decimal('100'), date: new Date('2026-01-01') },
+      { type: 'BUY' as const, asset: assetB, account: mockAccount, quantity: new Decimal(1), totalAmount: new Decimal('500'), date: new Date('2026-01-02') },
     ]
 
     const result = calcPositions(txs)

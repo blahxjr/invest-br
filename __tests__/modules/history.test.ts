@@ -17,6 +17,15 @@ const assetB = {
   assetClass: { code: 'FII' },
 }
 
+const mockAccount = {
+  id: 'account-1',
+  name: 'Nu Invest',
+  institution: {
+    id: 'inst-1',
+    name: 'Nu Pagamentos',
+  },
+}
+
 describe('calcSnapshotsFromTxs', () => {
   it('retorna snapshot zero para datas antes da primeira transacao', () => {
     const txs = [
@@ -26,6 +35,7 @@ describe('calcSnapshotsFromTxs', () => {
         totalAmount: new Decimal(300),
         date: new Date('2026-01-10T10:00:00Z'),
         asset: assetA,
+        account: mockAccount,
       },
     ]
 
@@ -43,6 +53,7 @@ describe('calcSnapshotsFromTxs', () => {
         totalAmount: new Decimal(300),
         date: new Date('2026-01-10T10:00:00Z'),
         asset: assetA,
+        account: mockAccount,
       },
       {
         type: 'BUY' as const,
@@ -50,6 +61,7 @@ describe('calcSnapshotsFromTxs', () => {
         totalAmount: new Decimal(700),
         date: new Date('2026-01-15T10:00:00Z'),
         asset: assetB,
+        account: mockAccount,
       },
     ]
 
@@ -67,6 +79,7 @@ describe('calcSnapshotsFromTxs', () => {
         totalAmount: new Decimal(300),
         date: new Date('2026-01-10T10:00:00Z'),
         asset: assetA,
+        account: mockAccount,
       },
       {
         type: 'SELL' as const,
@@ -74,6 +87,7 @@ describe('calcSnapshotsFromTxs', () => {
         totalAmount: new Decimal(90),
         date: new Date('2026-01-20T10:00:00Z'),
         asset: assetA,
+        account: mockAccount,
       },
     ]
 
@@ -91,6 +105,7 @@ describe('calcSnapshotsFromTxs', () => {
         totalAmount: new Decimal(500),
         date: new Date('2026-01-10T10:00:00Z'),
         asset: assetA,
+        account: mockAccount,
       },
       {
         type: 'SELL' as const,
@@ -98,6 +113,7 @@ describe('calcSnapshotsFromTxs', () => {
         totalAmount: new Decimal(550),
         date: new Date('2026-01-20T10:00:00Z'),
         asset: assetA,
+        account: mockAccount,
       },
     ]
 
@@ -115,6 +131,7 @@ describe('calcSnapshotsFromTxs', () => {
         totalAmount: new Decimal(100),
         date: new Date('2026-01-10T10:00:00Z'),
         asset: assetA,
+        account: mockAccount,
       },
       {
         type: 'BUY' as const,
@@ -122,6 +139,7 @@ describe('calcSnapshotsFromTxs', () => {
         totalAmount: new Decimal(400),
         date: new Date('2026-01-11T10:00:00Z'),
         asset: assetB,
+        account: mockAccount,
       },
       {
         type: 'SELL' as const,
@@ -129,6 +147,7 @@ describe('calcSnapshotsFromTxs', () => {
         totalAmount: new Decimal(60),
         date: new Date('2026-01-12T10:00:00Z'),
         asset: assetA,
+        account: mockAccount,
       },
     ]
 

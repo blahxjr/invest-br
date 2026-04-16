@@ -26,10 +26,16 @@ function formatPercent(value: Decimal): string {
   return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
 }
 
+function getInstitutionShort(name: string | null): string {
+  if (!name) return '—'
+  return name.split(' ').slice(0, 2).join(' ')
+}
+
 export default function PositionCard({ position }: { position: SerializedPositionWithQuote }) {
   const quantity = new Decimal(position.quantity)
   const avgCost = new Decimal(position.avgCost)
   const totalCost = new Decimal(position.totalCost)
+  const allocationPct = new Decimal(position.allocationPct)
   const currentValue = position.currentValue ? new Decimal(position.currentValue) : null
   const gainLoss = position.gainLoss ? new Decimal(position.gainLoss) : null
   const gainLossPercent = position.gainLossPercent ? new Decimal(position.gainLossPercent) : null
@@ -50,6 +56,19 @@ export default function PositionCard({ position }: { position: SerializedPositio
       </div>
 
       <div className="mt-4 space-y-2 text-sm text-gray-700">
+        <div className="flex items-center justify-between">
+          <span>Conta</span>
+          <span className="font-semibold text-gray-900">{position.accountName}</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span>Instituição</span>
+          <span className="font-semibold text-gray-900">{getInstitutionShort(position.institutionName)}</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span>% Carteira</span>
+          <span className="font-semibold text-blue-600">{allocationPct.toFixed(1)}%</span>
+        </div>
+        <div className="border-t border-gray-200 pt-2 mt-2" />
         <div className="flex items-center justify-between">
           <span>Qtd cotas</span>
           <span className="font-semibold text-gray-900">{formatQuantity(quantity)}</span>

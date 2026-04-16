@@ -11,6 +11,11 @@ export type Position = {
   quantity: Decimal
   avgCost: Decimal
   totalCost: Decimal
+  accountId: string
+  accountName: string
+  institutionId: string | null
+  institutionName: string | null
+  allocationPct: Decimal  // porcentagem da carteira (0-100)
 }
 
 export type PositionSummary = {
@@ -28,6 +33,11 @@ export type SerializedPosition = {
   quantity: string
   avgCost: string
   totalCost: string
+  accountId: string
+  accountName: string
+  institutionId: string | null
+  institutionName: string | null
+  allocationPct: string  // porcentagem formatada
 }
 
 export type AllocationItem = {
@@ -56,39 +66,46 @@ export type SerializedPositionWithQuote = SerializedPosition & {
 
 /**
  * Enriquece posições com cotações e métricas de P&L.
+ * Calcula também allocationPct com base no totalValue de todas as posições.
  */
 export function enrichWithQuotes(
   positions: Position[],
   quotes: Map<string, QuoteResult>,
 ): PositionWithQuote[] {
+  // Calcula o total da carteira para allocationPct
+  const totalValue = positions.reduce((sum, pos) => sum.plus(pos.totalCost), new Decimal(0))
+
   return positions.map((position) => {
     const quote = quotes.get(position.ticker)
-    if (!quote) {
-      return {
-        ...position,
-        currentPrice: null,
-        currentValue: null,
-        gainLoss: null,
-        gainLossPercent: null,
-        quoteChangePct: null,
-        quotedAt: null,
-      }
-    }
+    const currentValue = quote
+      ? position.quantity.times(quote.price)
+      : null
 
-    const currentValue = position.quantity.times(quote.price)
-    const gainLoss = currentValue.minus(position.totalCost)
+    const gainLoss = currentValue
+      ? currentValue.minus(position.totalCost)
+      : null
+
     const gainLossPercent = position.totalCost.isZero()
       ? new Decimal(0)
-      : gainLoss.div(position.totalCost).times(100)
+      : gainLoss
+      ? gainLoss.div(position.totalCost).times(100)
+      : null
+
+    // Atualizar allocationPct com base em currentValue se disponível
+    const allocationValue = currentValue ?? position.totalCost
+    const newAllocationPct = !totalValue.isZero()
+      ? allocationValue.div(totalValue).times(100)
+      : position.allocationPct
 
     return {
       ...position,
-      currentPrice: quote.price,
+      allocationPct: newAllocationPct,
+      currentPrice: quote?.price ?? null,
       currentValue,
       gainLoss,
       gainLossPercent,
-      quoteChangePct: quote.changePercent,
-      quotedAt: quote.changedAt,
+      quoteChangePct: quote?.changePercent ?? null,
+      quotedAt: quote?.changedAt ?? null,
     }
   })
 }

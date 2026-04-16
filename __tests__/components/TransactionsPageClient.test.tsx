@@ -176,4 +176,30 @@ describe('TransactionsPageClient', () => {
       })
     }
   })
+
+  it('exibe account.name corretamente na coluna Conta', () => {
+    const transactionsWithRealAccounts = [
+      {
+        ...mockTransactions[0],
+        account: { name: 'Nu Invest' },
+      },
+      {
+        ...mockTransactions[1],
+        account: { name: 'XP Investimentos' },
+      },
+    ]
+
+    render(
+      <TransactionsPageClient 
+        transactions={transactionsWithRealAccounts}
+        assets={mockAssets}
+        typeLabels={mockTypeLabels}
+        typeColors={mockTypeColors}
+      />
+    )
+
+    // Verify account names are rendered
+    expect(screen.getByText('Nu Invest')).toBeInTheDocument()
+    expect(screen.getByText('XP Investimentos')).toBeInTheDocument()
+  })
 })
