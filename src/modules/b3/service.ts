@@ -433,12 +433,14 @@ export async function analyzeNegociacaoRows(rows: NegociacaoRow[]): Promise<Anal
     name: assetClass.name,
     code: assetClass.code,
   }))
-  const existingAssets: ExistingAssetOption[] = allAssets.map((asset) => ({
-    id: asset.id,
-    ticker: asset.ticker,
-    name: asset.name,
-    className: asset.assetClass.name,
-  }))
+  const existingAssets: ExistingAssetOption[] = allAssets
+    .filter((asset) => asset.assetClass !== null)
+    .map((asset) => ({
+      id: asset.id,
+      ticker: asset.ticker,
+      name: asset.name,
+      className: asset.assetClass!.name,
+    }))
   const availableClassCodes = new Set(
     classes
       .map((assetClass) => assetClass.code?.trim().toUpperCase() ?? null)
