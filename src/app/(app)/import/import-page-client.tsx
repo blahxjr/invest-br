@@ -25,6 +25,7 @@ import {
   type SerializableUnresolvedAsset,
 } from './actions'
 import type { PosicaoReviewLine } from '@/modules/b3/service'
+import { ImportReviewTable, type ImportReviewTableLine } from '@/components/import/ImportReviewTable'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { AssetSearchCombobox } from '@/components/ui/AssetSearchCombobox'
 
@@ -190,6 +191,7 @@ function NegociacaoWizardCard() {
   const [analysis, setAnalysis] = useState<AnalyzeNegociacaoResponse | null>(null)
   const [unresolvedAssets, setUnresolvedAssets] = useState<SerializableUnresolvedAsset[]>([])
   const [missingClasses, setMissingClasses] = useState<MissingClassDraft[]>([])
+  const [negociacaoRowActions, setNegociacaoRowActions] = useState<Record<string, 'IMPORT' | 'SKIP'>>({})
   const [result, setResult] = useState<ConfirmImportResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -324,6 +326,16 @@ function NegociacaoWizardCard() {
       setAnalysis(response)
       setMissingClasses(initialMissingClasses)
       initializeAssetResolutions(response, initialMissingClasses)
+      const initialActions: Record<string, 'IMPORT' | 'SKIP'> = {}
+      for (const row of response.ready) {
+        initialActions[`ready-${row.referenceId}`] = 'IMPORT'
+      }
+      for (const asset of response.unresolvedAssets) {
+        for (const row of asset.rows) {
+          initialActions[`unresolved-${asset.ticker}-${row.referenceId}`] = 'IMPORT'
+        }
+      }
+      setNegociacaoRowActions(initialActions)
       setStep(response.unresolvedAssets.length > 0 ? 2 : 3)
     })
   }
@@ -390,8 +402,17 @@ function NegociacaoWizardCard() {
   const handleConfirmImport = () => {
     if (!analysis) return
 
+    const filteredReadyRows = analysis.ready.filter((row) => negociacaoRowActions[`ready-${row.referenceId}`] !== 'SKIP')
+
+    const filteredResolutions = unresolvedAssets
+      .map((asset) => ({
+        ...asset,
+        rows: asset.rows.filter((row) => negociacaoRowActions[`unresolved-${asset.ticker}-${row.referenceId}`] !== 'SKIP'),
+      }))
+      .filter((asset) => asset.rows.length > 0)
+
     const payload: ConfirmImportPayload = {
-      readyRows: analysis.ready,
+      readyRows: filteredReadyRows,
       classesToCreate: missingClasses
         .filter((missingClass) => missingClass.confirmAutoCreate)
         .map((missingClass) => ({
@@ -400,7 +421,7 @@ function NegociacaoWizardCard() {
           code: normalizeClassCode(missingClass.code),
           description: missingClass.description?.trim() || undefined,
         })),
-      resolutions: unresolvedAssets,
+      resolutions: filteredResolutions,
     }
 
     setError(null)
@@ -448,6 +469,66 @@ function NegociacaoWizardCard() {
   const associateList = unresolvedAssets.filter((asset) => asset.resolution?.action === 'associate')
   const classesToCreateList = missingClasses.filter((missingClass) => missingClass.confirmAutoCreate)
   const institutionPreviews = analysis?.institutionPreviews ?? []
+  const negociacaoReviewLines: ImportReviewTableLine[] = useMemo(() => {
+    if (!analysis) return []
+
+    const readyLines = analysis.ready.map((row) => {
+      const id = `ready-${row.referenceId}`
+      return {
+        id,
+        status: 'OK' as const,
+        reason: 'linha_pronta',
+        action: negociacaoRowActions[id] ?? 'IMPORT',
+        type: row.type,
+        ticker: row.ticker,
+        instituicao: row.instituicao,
+        conta: '',
+        original: {
+          mercado: row.mercado,
+          instituicao: row.instituicao,
+        },
+        normalized: {
+          date: row.date,
+          type: row.type,
+          ticker: row.ticker,
+          quantity: row.quantity,
+          total: row.total,
+          referenceId: row.referenceId,
+        },
+      }
+    })
+
+    const unresolvedLines = unresolvedAssets.flatMap((asset) =>
+      asset.rows.map((row) => {
+        const id = `unresolved-${asset.ticker}-${row.referenceId}`
+        return {
+          id,
+          status: 'REVISAR' as const,
+          reason: 'ativo_nao_mapeado_requer_resolucao',
+          action: negociacaoRowActions[id] ?? 'IMPORT',
+          type: row.type,
+          ticker: row.ticker,
+          instituicao: row.instituicao,
+          conta: '',
+          original: {
+            mercado: row.mercado,
+            instituicao: row.instituicao,
+          },
+          normalized: {
+            date: row.date,
+            type: row.type,
+            ticker: row.ticker,
+            quantity: row.quantity,
+            total: row.total,
+            referenceId: row.referenceId,
+            resolution: asset.resolution?.action ?? null,
+          },
+        }
+      }),
+    )
+
+    return [...readyLines, ...unresolvedLines]
+  }, [analysis, unresolvedAssets, negociacaoRowActions])
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -761,6 +842,28 @@ function NegociacaoWizardCard() {
             </p>
           </div>
 
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800"
+              onClick={() => downloadJsonFile('negociacao-revisar.json', negociacaoReviewLines.filter((line) => line.status !== 'OK'))}
+            >
+              Baixar auxiliar REVISAR
+            </button>
+          </div>
+
+          <ImportReviewTable
+            title="Preview de Negociação"
+            lines={negociacaoReviewLines}
+            onLineChange={(id, patch) => {
+              if (!patch.action) return
+              setNegociacaoRowActions((current) => ({
+                ...current,
+                [id]: patch.action,
+              }))
+            }}
+          />
+
           <div className="flex items-center justify-between">
             <button
               type="button"
@@ -838,10 +941,6 @@ function NegociacaoWizardCard() {
   )
 }
 
-function toDateInputValue(value: string) {
-  return value.slice(0, 10)
-}
-
 function downloadJsonFile(filename: string, content: unknown) {
   const blob = new Blob([JSON.stringify(content, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
@@ -852,8 +951,66 @@ function downloadJsonFile(filename: string, content: unknown) {
   URL.revokeObjectURL(url)
 }
 
-function categoryLabel(category: PosicaoReviewLine['category'] | null | undefined) {
-  return category ?? 'N/A'
+function toReviewStatus(value: string): 'OK' | 'REVISAR' | 'IGNORAR' {
+  if (value === 'OK' || value === 'REVISAR' || value === 'IGNORAR') return value
+  return 'REVISAR'
+}
+
+function toMovimentacaoTableLines(lines: SerializableMovimentacaoLine[]): ImportReviewTableLine[] {
+  return lines.map((line) => ({
+    id: line.id,
+    status: toReviewStatus(line.status),
+    reason: line.reason,
+    action: line.action,
+    type: line.type,
+    ticker: line.ticker,
+    instituicao: line.instituicao,
+    conta: '',
+    original: line.original,
+    normalized: {
+      date: line.normalized.date,
+      type: line.normalized.type,
+      ticker: line.normalized.ticker,
+      instituicao: line.normalized.instituicao,
+      quantity: line.normalized.quantity,
+      price: line.normalized.price,
+      total: line.normalized.total,
+      referenceId: line.normalized.referenceId,
+    },
+  }))
+}
+
+function toPosicaoTableLines(lines: PosicaoReviewLine[]): ImportReviewTableLine[] {
+  return lines.map((line) => ({
+    id: line.id,
+    status: toReviewStatus(line.status),
+    reason: line.reason,
+    action: line.action,
+    type: line.sheetName,
+    ticker: line.ticker,
+    instituicao: line.instituicao,
+    conta: line.conta,
+    original: {
+      produto: line.original.produto,
+      instituicao: line.original.instituicao,
+      conta: line.original.conta,
+      codigoNegociacao: line.original.codigoNegociacao,
+      tipo: line.original.tipo,
+      quantidade: line.original.quantidade,
+      precoFechamento: line.original.precoFechamento,
+      valorAtualizado: line.original.valorAtualizado,
+    },
+    normalized: {
+      ticker: line.normalized.ticker,
+      name: line.normalized.name,
+      category: line.normalized.category,
+      quantity: line.normalized.quantity,
+      closePrice: line.normalized.closePrice,
+      updatedValue: line.normalized.updatedValue,
+      instituicao: line.normalized.instituicao,
+      conta: line.normalized.conta,
+    },
+  }))
 }
 
 function MovimentacaoWizardCard() {
@@ -958,91 +1115,21 @@ function MovimentacaoWizardCard() {
             </button>
           </div>
 
-          <div className="max-h-80 overflow-auto rounded-lg border border-gray-200">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 text-gray-700">
-                <tr>
-                  <th className="p-2 text-left">Status</th>
-                  <th className="p-2 text-left">Classificação</th>
-                  <th className="p-2 text-left">Motivo</th>
-                  <th className="p-2 text-left">Ação</th>
-                  <th className="p-2 text-left">Data original</th>
-                  <th className="p-2 text-left">Movimentação original</th>
-                  <th className="p-2 text-left">Produto original</th>
-                  <th className="p-2 text-left">Instituição original</th>
-                  <th className="p-2 text-left">Data normalizada</th>
-                  <th className="p-2 text-left">Tipo normalizado</th>
-                  <th className="p-2 text-left">Ticker normalizado</th>
-                  <th className="p-2 text-left">Instituição normalizada</th>
-                  <th className="p-2 text-left">Qtd normalizada</th>
-                  <th className="p-2 text-left">Total normalizado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lines.map((line) => (
-                  <tr key={line.id} className="border-t border-gray-100 align-top">
-                    <td className="p-2 text-xs font-semibold">{line.status}</td>
-                    <td className="p-2 text-xs">{line.classification}</td>
-                    <td className="p-2 text-xs text-amber-700">{line.reason}</td>
-                    <td className="p-2">
-                      <select
-                        className="rounded-md border border-gray-300 px-2 py-1"
-                        value={line.action}
-                        onChange={(event) => updateLine(line.id, { action: event.target.value as SerializableMovimentacaoLine['action'] })}
-                      >
-                        <option value="IMPORT">IMPORTAR</option>
-                        <option value="SKIP">IGNORAR</option>
-                      </select>
-                    </td>
-                    <td className="p-2 text-xs">{line.original.data || '-'}</td>
-                    <td className="p-2 text-xs">{line.original.movimentacao || '-'}</td>
-                    <td className="p-2 text-xs">{line.original.produto || '-'}</td>
-                    <td className="p-2 text-xs">{line.original.instituicao || '-'}</td>
-                    <td className="p-2">
-                      <input
-                        type="date"
-                        className="rounded-md border border-gray-300 px-2 py-1"
-                        value={toDateInputValue(line.date)}
-                        onChange={(event) => updateLine(line.id, { date: `${event.target.value}T00:00:00.000Z` })}
-                      />
-                    </td>
-                    <td className="p-2">
-                      <select
-                        className="rounded-md border border-gray-300 px-2 py-1"
-                        value={line.type}
-                        onChange={(event) => updateLine(line.id, { type: event.target.value as SerializableMovimentacaoLine['type'] })}
-                      >
-                        <option value="BUY">BUY</option>
-                        <option value="DIVIDEND">DIVIDEND</option>
-                      </select>
-                    </td>
-                    <td className="p-2">
-                      <input className="rounded-md border border-gray-300 px-2 py-1" value={line.ticker} onChange={(event) => updateLine(line.id, { ticker: event.target.value.toUpperCase() })} />
-                    </td>
-                    <td className="p-2">
-                      <input className="rounded-md border border-gray-300 px-2 py-1" value={line.instituicao} onChange={(event) => updateLine(line.id, { instituicao: event.target.value.toUpperCase() })} />
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="number"
-                        className="w-24 rounded-md border border-gray-300 px-2 py-1"
-                        value={line.quantity}
-                        onChange={(event) => updateLine(line.id, { quantity: Number(event.target.value) })}
-                      />
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="number"
-                        className="w-28 rounded-md border border-gray-300 px-2 py-1"
-                        value={line.total ?? 0}
-                        onChange={(event) => updateLine(line.id, { total: Number(event.target.value) })}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ImportReviewTable
+            title="Preview de Movimentação"
+            lines={toMovimentacaoTableLines(lines)}
+            onLineChange={(id, patch) => {
+              const target = lines.find((line) => line.id === id)
+              if (!target) return
+
+              const next: Partial<SerializableMovimentacaoLine> = {}
+              if (patch.action) next.action = patch.action
+              if (patch.type === 'BUY' || patch.type === 'DIVIDEND') next.type = patch.type
+              if (typeof patch.ticker === 'string') next.ticker = patch.ticker.toUpperCase()
+              if (typeof patch.instituicao === 'string') next.instituicao = patch.instituicao.toUpperCase()
+              updateLine(id, next)
+            }}
+          />
 
           <div className="flex items-center justify-between">
             <button type="button" onClick={() => setStep(1)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700">← Voltar</button>
@@ -1177,66 +1264,21 @@ function PosicaoWizardCard() {
             </button>
           </div>
 
-          <div className="max-h-80 overflow-auto rounded-lg border border-gray-200">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 text-gray-700">
-                <tr>
-                  <th className="p-2 text-left">Status</th>
-                  <th className="p-2 text-left">Classificação</th>
-                  <th className="p-2 text-left">Motivo</th>
-                  <th className="p-2 text-left">Ação</th>
-                  <th className="p-2 text-left">Produto original</th>
-                  <th className="p-2 text-left">Ticker original</th>
-                  <th className="p-2 text-left">Instituição original</th>
-                  <th className="p-2 text-left">Ticker normalizado</th>
-                  <th className="p-2 text-left">Nome normalizado</th>
-                  <th className="p-2 text-left">Categoria normalizada</th>
-                  <th className="p-2 text-left">Instituição normalizada</th>
-                  <th className="p-2 text-left">Conta normalizada</th>
-                  <th className="p-2 text-left">Problemas</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lines.map((line) => (
-                  <tr key={line.id} className="border-t border-gray-100 align-top">
-                    <td className="p-2 text-xs font-semibold">{line.status}</td>
-                    <td className="p-2 text-xs">{line.classification}</td>
-                    <td className="p-2 text-xs text-amber-700">{line.reason}</td>
-                    <td className="p-2">
-                      <select
-                        className="rounded-md border border-gray-300 px-2 py-1"
-                        value={line.action}
-                        onChange={(event) => updateLine(line.id, { action: event.target.value as PosicaoReviewLine['action'] })}
-                      >
-                        <option value="IMPORT">IMPORTAR</option>
-                        <option value="SKIP">IGNORAR</option>
-                      </select>
-                    </td>
-                    <td className="p-2 text-xs">{line.original.produto || '-'}</td>
-                    <td className="p-2 text-xs">{line.original.codigoNegociacao || '-'}</td>
-                    <td className="p-2 text-xs">{line.original.instituicao || '-'}</td>
-                    <td className="p-2"><input className="rounded-md border border-gray-300 px-2 py-1" value={line.ticker} onChange={(event) => updateLine(line.id, { ticker: event.target.value.toUpperCase() })} /></td>
-                    <td className="p-2"><input className="rounded-md border border-gray-300 px-2 py-1" value={line.name} onChange={(event) => updateLine(line.id, { name: event.target.value })} /></td>
-                    <td className="p-2">
-                      <select
-                        className="rounded-md border border-gray-300 px-2 py-1"
-                        value={categoryLabel(line.category)}
-                        onChange={(event) => updateLine(line.id, { category: event.target.value as PosicaoReviewLine['category'] })}
-                      >
-                        <option value="STOCK">STOCK</option>
-                        <option value="FII">FII</option>
-                        <option value="ETF">ETF</option>
-                        <option value="BDR">BDR</option>
-                      </select>
-                    </td>
-                    <td className="p-2"><input className="rounded-md border border-gray-300 px-2 py-1" value={line.instituicao} onChange={(event) => updateLine(line.id, { instituicao: event.target.value.toUpperCase() })} /></td>
-                    <td className="p-2 text-xs">{line.conta || '-'}</td>
-                    <td className="p-2 text-xs text-amber-700">{line.issues.join(', ') || '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ImportReviewTable
+            title="Preview de Posição"
+            lines={toPosicaoTableLines(lines)}
+            onLineChange={(id, patch) => {
+              const next: Partial<PosicaoReviewLine> = {}
+              if (patch.action) next.action = patch.action
+              if (typeof patch.ticker === 'string') next.ticker = patch.ticker.toUpperCase()
+              if (typeof patch.instituicao === 'string') next.instituicao = patch.instituicao.toUpperCase()
+              if (typeof patch.conta === 'string') next.conta = patch.conta
+              if (typeof patch.type === 'string' && ['STOCK', 'FII', 'ETF', 'BDR'].includes(patch.type)) {
+                next.category = patch.type as PosicaoReviewLine['category']
+              }
+              updateLine(id, next)
+            }}
+          />
 
           <div className="flex items-center justify-between">
             <button type="button" onClick={() => setStep(1)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700">← Voltar</button>

@@ -345,10 +345,9 @@ describe('ImportPageClient wizard', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Status')).toBeInTheDocument()
-      expect(screen.getByText('Classificação')).toBeInTheDocument()
       expect(screen.getByText('Motivo')).toBeInTheDocument()
-      expect(screen.getByText('Data original')).toBeInTheDocument()
-      expect(screen.getByText('Tipo normalizado')).toBeInTheDocument()
+      expect(screen.getByText('Originais')).toBeInTheDocument()
+      expect(screen.getByText('Normalizados')).toBeInTheDocument()
       expect(screen.getByText('Baixar arquivo principal')).toBeInTheDocument()
       expect(screen.getByText('Baixar arquivo REVISAR')).toBeInTheDocument()
       expect(screen.getByText('Baixar log JSON')).toBeInTheDocument()
@@ -421,9 +420,8 @@ describe('ImportPageClient wizard', () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByText('Produto original')).toBeInTheDocument()
-      expect(screen.getByText('Ticker normalizado')).toBeInTheDocument()
-      expect(screen.getByText('Instituição normalizada')).toBeInTheDocument()
+      expect(screen.getByText('Originais')).toBeInTheDocument()
+      expect(screen.getByText('Normalizados')).toBeInTheDocument()
       expect(screen.getByText('Baixar divergências')).toBeInTheDocument()
       expect(screen.getByText('Baixar log de sincronização')).toBeInTheDocument()
     })
