@@ -1,6 +1,6 @@
 # Estado atual do projeto
 
-**Última atualização:** 2026-04-27 (MVP v1.0 polish final)
+**Última atualização:** 2026-04-15 (P18 - Positions v2 enriquecimento + dual view + filtros + allocation fix)
 
 ## Stack
 - Next.js 16.2.2 (App Router) + React 19 + TypeScript
@@ -59,12 +59,23 @@ Arquivos-chave: src/modules/b3/parser/*.ts, src/modules/b3/service.ts, src/app/(
 Contratos: parseNegociacaoRow, parseMovimentacaoRow, parsePosicaoRow, persistNegociacao, persistMovimentacao, syncPosicao
 
 ### Positions
-Status: implementado com custo medio ponderado + cotacoes + historico de patrimonio.
-Arquivos-chave: src/modules/positions/service.ts, src/modules/positions/types.ts, src/modules/positions/history.ts
-Contratos: calcPositions, summarizePositions, getPositions, enrichWithQuotes, calcSnapshotsFromTxs, calcPatrimonyHistory
+Status: v2 completo com enriquecimento de dados, dual view, filtros e alocacao baseada em valor de mercado.
+Arquivos-chave: src/modules/positions/service.ts, src/modules/positions/types.ts, src/modules/positions/history.ts, src/app/(app)/positions/positions-page-client.tsx, src/app/(app)/positions/positions-table.tsx
+Contratos: 
+- Service: calcPositions, summarizePositions, getPositions, enrichWithQuotes (3-pass allocation), calcSnapshotsFromTxs, calcPatrimonyHistory
+- UI: PositionCard (account, institution, allocation %), PositionsTable (11 colunas sortaveis), toggle cards/table (localStorage), filtros (account, institution, search)
+Recursos P18:
+- Enriquecimento: accountId, accountName, institutionId, institutionName, allocationPct
+- Dual view: cards vs table com toggle persistido em localStorage
+- Sorting: multi-coluna com estado client-side
+- Filtros: conta, instituicao, busca por ticker com reset button
+- Allocation: valor de mercado (currentValue) com fallback para totalCost
+- Reset script: scripts/reset-import-data.ts com confirmacao interativa
+- Testes: PositionsEnrichment.test.tsx com 11 casos cobrindo UI, filters, sorting
+- Correção: alocacao no dashboard usa calcAllocationWithQuotes para consistencia
 
 ### Dashboard
-Status: implementado (v2 + valor de mercado + fallback error).
+Status: v2 completo com valor de mercado, fallback error e alocacao por valor de mercado.
 Arquivos-chave: src/app/(app)/dashboard/data.ts, src/app/(app)/dashboard/page.tsx
 Contratos: calcAllocation, getDashboardData
 
@@ -92,8 +103,8 @@ Contratos: rota /performance com filtro client-side por periodo e KPIs de evoluc
 - ✅ Cleanup: zero console.log em src/app, zero `: any` de tipos de domínio
 
 ## Testes
-- Total: 187 passed, 0 failed, 0 skipped
-- Arquivos de teste: 34
+- Total: 239 passed, 0 failed, 0 skipped (P18 +11 testes PositionsEnrichment)
+- Arquivos de teste: 40
 - Novos testes P17:
   - EmptyState.test.tsx: 4
   - Skeleton.test.tsx: 2
@@ -171,12 +182,23 @@ Arquivos-chave: src/modules/b3/parser/*.ts, src/modules/b3/service.ts, src/app/(
 Contratos: parseNegociacaoRow, parseMovimentacaoRow, parsePosicaoRow, persistNegociacao, persistMovimentacao, syncPosicao
 
 ### Positions
-Status: implementado com custo medio ponderado + cotacoes + historico de patrimonio.
-Arquivos-chave: src/modules/positions/service.ts, src/modules/positions/types.ts, src/modules/positions/history.ts
-Contratos: calcPositions, summarizePositions, getPositions, enrichWithQuotes, calcSnapshotsFromTxs, calcPatrimonyHistory
+Status: v2 completo com enriquecimento de dados, dual view, filtros e alocacao baseada em valor de mercado (P18).
+Arquivos-chave: src/modules/positions/service.ts, src/modules/positions/types.ts, src/modules/positions/history.ts, src/app/(app)/positions/positions-page-client.tsx, src/app/(app)/positions/positions-table.tsx, scripts/reset-import-data.ts
+Contratos: 
+- Service: calcPositions, summarizePositions, getPositions, enrichWithQuotes (3-pass allocation), calcSnapshotsFromTxs, calcPatrimonyHistory
+- UI: PositionCard, PositionsTable, dual view toggle (localStorage), filtros (account/institution/search), sorting
+Recursos P18:
+- Enriquecimento: accountId, accountName, institutionId, institutionName, allocationPct em cada Position
+- Dual view: cards view vs table view com toggle persistido em localStorage
+- Sorting: multi-coluna ascendente/descendente/null com estado client-side
+- Filtros: conta, instituicao, busca por ticker com reset button
+- Allocation: recalculado com valor de mercado (currentValue), fallback para totalCost, soma 100%
+- Reset script: scripts/reset-import-data.ts com confirmacao interativa para limpar dados B3
+- Testes: PositionsEnrichment.test.tsx com 11 casos + ajustes em outros testes
+- Correção: alocacao no dashboard agora usa calcAllocationWithQuotes para consistencia
 
 ### Dashboard
-Status: implementado (v2 + valor de mercado).
+Status: v2 completo com valor de mercado.
 Arquivos-chave: src/app/(app)/dashboard/data.ts, src/app/(app)/dashboard/page.tsx
 Contratos: calcAllocation, getDashboardData
 
@@ -191,8 +213,8 @@ Arquivos-chave: src/app/(app)/performance/page.tsx, src/app/(app)/performance/pe
 Contratos: rota /performance com filtro client-side por periodo e KPIs de evolucao patrimonial
 
 ## Testes
-- Total: 124 passed, 0 failed, 0 skipped
-- Arquivos de teste: 22
+- Total: 239 passed, 0 failed, 0 skipped
+- Arquivos de teste: 40
 - Destaques:
   - __tests__/modules/history.test.ts: 5
   - __tests__/lib/quotes.test.ts: 4
@@ -210,9 +232,14 @@ Contratos: rota /performance com filtro client-side por periodo e KPIs de evoluc
 - DEC-010: jsdom por arquivo de teste de componente
 - DEC-011: autenticacao por magic link
 - DEC-012: sessoes em banco
-- DEC-017 (novo): EmptyState + Skeleton como primitivos reutilizáveis para polish
-- DEC-018 (novo): Rebalance desvio visual: ▲ vermelho, ▼ âmbar, ✓ verde
-- DEC-019 (novo): Quote fallback: badge "Cotação indisponível" + totalCost como valor
+- DEC-013: session.user.id via callback
+- DEC-014: Account exige clientId e institutionId; portfolioId opcional
+- DEC-015: Insights v1 on-the-fly
+- DEC-016: Decimal serializado no boundary Server -> Client
+- DEC-017: EmptyState + Skeleton como primitivos reutilizáveis
+- DEC-018: Rebalance desvio visual: ▲ vermelho, ▼ âmbar, ✓ verde
+- DEC-019: Quote fallback: badge "Cotação indisponível" + totalCost
+- DEC-020 (novo P18): Allocation em valor de mercado (currentValue) com fallback para totalCost, soma 100% como valor
 
 ## Pendências resolvidas neste prompt (P17 polish final)
 - ✅ Responsividade mobile em todas as rotas principais

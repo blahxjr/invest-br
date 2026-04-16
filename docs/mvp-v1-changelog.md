@@ -1,3 +1,70 @@
+# MVP v1.0 — Changelog
+
+## P18 — Positions v2: Enriquecimento, Dual View e Allocation Fix (2026-04-15)
+
+### Resumo
+Implementação completa da versão 2 do módulo Positions com enriquecimento de dados (account/institution), interface dual view (cards/tabela), filtros client-side, sorting multi-coluna e correção crítica da fórmula de alocação percentual para usar valor de mercado.
+
+### Alterações Implementadas
+
+#### Tipos & Service (Positions Module)
+- ✅ `Position` type enriquecido com `accountId`, `accountName`, `institutionId`, `institutionName`, `allocationPct`
+- ✅ `enrichWithQuotes()` refatorado com 3-pass algorithm:
+  - Passe 1: calcular currentValue para cada posição
+  - Passe 2: calcular totalPortfolioValue usando currentValue (com fallback para totalCost)
+  - Passe 3: calcular allocationPct baseado no totalValue
+- ✅ Dashboard service adicionado `calcAllocationWithQuotes()` para alocação baseada em valor de mercado
+- ✅ Service queries atualizadas com Prisma JOINs para account + institution data
+- ✅ Null safety check adicionado para assetClass em B3 service
+
+#### UI Components (Positions Page)
+- ✅ **PositionCard** — expandido para exibir account, institution, allocation %
+- ✅ **PositionsTable** — NEW component (250+ linhas)
+  - 11 colunas: ticker, assetClass, category, accountName, institutionName, quantity, avgCost, totalCost, currentValue, gainLoss, allocationPct
+  - Multi-sort: asc → desc → null
+  - Sticky header com espaçamento responsivo
+- ✅ **PositionsPageClient** — refatorado (~300 linhas)
+  - Toggle cards/table com localStorage persistence
+  - 5 filtros: account, institution, search (ticker), com estado persistido
+  - Contadores: "X de Y ativos"
+  - Reset filters button
+  - Integração com PositionsTable para sorting
+
+#### Data & State Management
+- ✅ Serialização de `allocationPct` em boundary Server -> Client
+- ✅ localStorage hooks para view toggle + filter persistence
+- ✅ useMemo otimização para recálculos de filtros/sorting
+
+#### Scripts & Utilities
+- ✅ `scripts/reset-import-data.ts` — NEW script interativo
+  - Confirmação do usuário antes de deletar
+  - FK-respecting deletion order
+  - Comando adicionado em package.json: `pnpm db:reset-import`
+- ✅ Dashboard data.ts: `calcAllocationWithQuotes()` para alocação consistente
+
+#### Testes
+- ✅ `PositionsEnrichment.test.tsx` — NEW file com 11 test cases:
+  - Toggle cards/table functionality
+  - Filtros isolados e combinados
+  - Sorting multi-coluna
+  - Service queries com JOINs
+  - Null safety em account/institution
+- ✅ Ajustes em testes existentes para incluir accountId/accountName em fixtures
+- ✅ Todos os 239 testes passando (0 falhas)
+
+#### Build & Git
+- ✅ Next.js 16.2.2 build: Compiled successfully, 0 TypeScript errors
+- ✅ 3 commits pushed:
+  - `feat(positions): dual view card/tabela, filtros de conta/instituição, allocação %, reset de base`
+  - `fix(b3): handle null assetClass in analyzeNegociacaoRows`
+  - `fix(positions): corrigir cálculo de alocação percentual baseado em valor de mercado`
+
+#### Documentação
+- ✅ memory/current-state.md atualizado com P18 status
+- ✅ DEC-020 novo: allocation em valor de mercado com fallback
+
+---
+
 # MVP v1.0 — Changelog Polish Final
 
 ## Resumo
