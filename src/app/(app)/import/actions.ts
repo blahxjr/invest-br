@@ -328,7 +328,7 @@ export async function analyzeMovimentacaoFile(formData: FormData): Promise<Analy
     const workbook = workbookFromArrayBuffer(await file.arrayBuffer())
     const rows = sheetRows(workbook, 'Movimentação')
     const parsedLines = parseMovimentacaoForReview(rows)
-    const result = await analyzeMovimentacaoRows(parsedLines)
+    const result = await analyzeMovimentacaoRows(parsedLines, session.user.id)
 
     const serializeLine = (line: AnalyzeMovimentacaoResult['lines'][number]): SerializableMovimentacaoLine => ({
       ...line,
@@ -351,6 +351,12 @@ export async function analyzeMovimentacaoFile(formData: FormData): Promise<Analy
   } catch (error) {
     return {
       lines: [],
+      institutionAccountMappings: [],
+      institutionAccountSummary: {
+        institutionsWithAutoFill: 0,
+        institutionsRequiringSelection: 0,
+        totalRowsPendingAccountSelection: 0,
+      },
       exportArtifacts: {
         mainFile: [],
         reviewFile: [],

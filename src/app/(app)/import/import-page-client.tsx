@@ -1261,7 +1261,7 @@ function toMovimentacaoTableLines(lines: SerializableMovimentacaoLine[]): Import
     type: line.type,
     ticker: line.ticker,
     instituicao: line.instituicao,
-    conta: '',
+    conta: line.conta,
     original: line.original,
     normalized: {
       date: line.normalized.date,
@@ -1313,12 +1313,32 @@ function MovimentacaoWizardCard() {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1)
   const [analysis, setAnalysis] = useState<AnalyzeMovimentacaoResponse | null>(null)
   const [lines, setLines] = useState<SerializableMovimentacaoLine[]>([])
+  const [movimentacaoInstitutionAccountSelections, setMovimentacaoInstitutionAccountSelections] = useState<Record<string, string>>({})
+  const [movimentacaoInstitutionFilter, setMovimentacaoInstitutionFilter] = useState('TODOS')
   const [result, setResult] = useState<ConfirmMovimentacaoResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
   const updateLine = (id: string, patch: Partial<SerializableMovimentacaoLine>) => {
     setLines((current) => current.map((line) => (line.id === id ? { ...line, ...patch } : line)))
+  }
+
+  const applyMovimentacaoAccountToInstitution = (institutionName: string, accountName: string, onlyEmpty: boolean) => {
+    const trimmedAccountName = accountName.trim()
+    if (!trimmedAccountName) return
+
+    setMovimentacaoInstitutionAccountSelections((current) => ({
+      ...current,
+      [institutionName]: trimmedAccountName,
+    }))
+
+    setLines((current) =>
+      current.map((line) =>
+        line.instituicao === institutionName && (!onlyEmpty || !line.conta?.trim())
+          ? { ...line, conta: trimmedAccountName }
+          : line,
+      ),
+    )
   }
 
   const handleAnalyze = (formData: FormData) => {
@@ -1330,8 +1350,41 @@ function MovimentacaoWizardCard() {
         setStep(1)
         return
       }
-      setAnalysis(response)
-      setLines(response.lines)
+
+      const responseMappings = response.institutionAccountMappings ?? []
+      const responseSummary = response.institutionAccountSummary ?? {
+        institutionsWithAutoFill: 0,
+        institutionsRequiringSelection: 0,
+        totalRowsPendingAccountSelection: 0,
+      }
+
+      const initialSelections = Object.fromEntries(
+        responseMappings.map((mapping) => [
+          mapping.normalizedInstitutionName,
+          mapping.suggestedAccountName ?? mapping.existingAccounts[0]?.name ?? '',
+        ]),
+      )
+
+      const hydratedLines = responseMappings.reduce((current, mapping) => {
+        if (mapping.autoFillStrategy !== 'SINGLE_ACCOUNT' || !mapping.suggestedAccountName) {
+          return current
+        }
+
+        return current.map((line) =>
+          line.instituicao === mapping.normalizedInstitutionName && !line.conta?.trim()
+            ? { ...line, conta: mapping.suggestedAccountName }
+            : line,
+        )
+      }, response.lines)
+
+      setAnalysis({
+        ...response,
+        institutionAccountMappings: responseMappings,
+        institutionAccountSummary: responseSummary,
+      })
+      setLines(hydratedLines)
+      setMovimentacaoInstitutionAccountSelections(initialSelections)
+      setMovimentacaoInstitutionFilter('TODOS')
       setStep(2)
     })
   }
@@ -1349,6 +1402,23 @@ function MovimentacaoWizardCard() {
       setStep(4)
     })
   }
+
+  const movimentacaoInstitutionAccountMappings = useMemo(() => {
+    if (!analysis) return []
+
+    return analysis.institutionAccountMappings.map((mapping) => {
+      const rowsForInstitution = lines.filter((line) => line.instituicao === mapping.normalizedInstitutionName)
+      const rowsWithoutAccountCount = rowsForInstitution.filter((line) => !line.conta?.trim()).length
+      const rowsWithExplicitAccountCount = rowsForInstitution.length - rowsWithoutAccountCount
+
+      return {
+        ...mapping,
+        rowCount: rowsForInstitution.length,
+        rowsWithoutAccountCount,
+        rowsWithExplicitAccountCount,
+      }
+    })
+  }, [analysis, lines])
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -1411,9 +1481,112 @@ function MovimentacaoWizardCard() {
             </button>
           </div>
 
+          <div className="rounded-xl border border-gray-200 p-4 space-y-3">
+            <div className="space-y-1 text-sm text-gray-700">
+              <p className="font-semibold text-gray-900">Contas por instituição</p>
+              <p>
+                Autopreenchimento: {analysis.institutionAccountSummary.institutionsWithAutoFill} instituição(ões) com conta única.
+                Seleção necessária: {analysis.institutionAccountSummary.institutionsRequiringSelection}.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              {movimentacaoInstitutionAccountMappings.map((mapping) => {
+                const selectedAccount = movimentacaoInstitutionAccountSelections[mapping.normalizedInstitutionName] ?? ''
+                const needsSelection = mapping.autoFillStrategy === 'MULTIPLE_ACCOUNTS'
+                const needsManualEntry = mapping.autoFillStrategy === 'NO_ACCOUNT_FOUND'
+
+                return (
+                  <div key={mapping.normalizedInstitutionName} className="rounded-lg border border-gray-200 p-3">
+                    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                      <div className="text-sm text-gray-700">
+                        <p className="font-semibold text-gray-900">{mapping.normalizedInstitutionName}</p>
+                        <p>
+                          {mapping.rowCount} linha(s) | sem conta: {mapping.rowsWithoutAccountCount} | com conta: {mapping.rowsWithExplicitAccountCount}
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700"
+                        onClick={() => setMovimentacaoInstitutionFilter(mapping.normalizedInstitutionName)}
+                      >
+                        Revisar linhas desta instituição
+                      </button>
+                    </div>
+
+                    {mapping.autoFillStrategy === 'SINGLE_ACCOUNT' && mapping.suggestedAccountName && (
+                      <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                        Conta única detectada: <strong>{mapping.suggestedAccountName}</strong>. As linhas sem conta foram preenchidas automaticamente.
+                      </div>
+                    )}
+
+                    {(needsSelection || needsManualEntry) && (
+                      <div className="mt-3 flex flex-col gap-2 md:flex-row md:items-center">
+                        {needsSelection ? (
+                          <select
+                            className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                            value={selectedAccount}
+                            onChange={(event) => {
+                              const nextValue = event.target.value
+                              setMovimentacaoInstitutionAccountSelections((current) => ({
+                                ...current,
+                                [mapping.normalizedInstitutionName]: nextValue,
+                              }))
+                            }}
+                          >
+                            <option value="">Selecione a conta</option>
+                            {mapping.existingAccounts.map((account) => (
+                              <option key={`${mapping.normalizedInstitutionName}-${account.name}`} value={account.name}>
+                                {account.name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                            placeholder="Informe a conta padrão"
+                            value={selectedAccount}
+                            onChange={(event) => {
+                              const nextValue = event.target.value
+                              setMovimentacaoInstitutionAccountSelections((current) => ({
+                                ...current,
+                                [mapping.normalizedInstitutionName]: nextValue,
+                              }))
+                            }}
+                          />
+                        )}
+
+                        <button
+                          type="button"
+                          className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-blue-300"
+                          disabled={!selectedAccount.trim() || mapping.rowsWithoutAccountCount === 0}
+                          onClick={() => applyMovimentacaoAccountToInstitution(mapping.normalizedInstitutionName, selectedAccount, true)}
+                        >
+                          Aplicar nas linhas sem conta
+                        </button>
+
+                        <button
+                          type="button"
+                          className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 disabled:cursor-not-allowed disabled:bg-gray-100"
+                          disabled={!selectedAccount.trim() || mapping.rowCount === 0}
+                          onClick={() => applyMovimentacaoAccountToInstitution(mapping.normalizedInstitutionName, selectedAccount, false)}
+                        >
+                          Sobrescrever todas as linhas
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
           <ImportReviewTable
             title="Preview de Movimentação"
             lines={toMovimentacaoTableLines(lines)}
+            institutionFilter={movimentacaoInstitutionFilter}
+            onInstitutionFilterChange={setMovimentacaoInstitutionFilter}
             onLineChange={(id, patch) => {
               const target = lines.find((line) => line.id === id)
               if (!target) return
@@ -1423,6 +1596,7 @@ function MovimentacaoWizardCard() {
               if (patch.type === 'BUY' || patch.type === 'DIVIDEND') next.type = patch.type
               if (typeof patch.ticker === 'string') next.ticker = patch.ticker.toUpperCase()
               if (typeof patch.instituicao === 'string') next.instituicao = patch.instituicao.toUpperCase()
+              if (typeof patch.conta === 'string') next.conta = patch.conta
               updateLine(id, next)
             }}
           />

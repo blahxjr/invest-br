@@ -156,6 +156,7 @@ export type MovimentacaoReviewLine = {
   type: 'BUY' | 'DIVIDEND'
   ticker: string
   instituicao: string
+  conta: string
   quantity: number
   price: number | null
   total: number | null
@@ -164,6 +165,8 @@ export type MovimentacaoReviewLine = {
 
 export type AnalyzeMovimentacaoResult = {
   lines: MovimentacaoReviewLine[]
+  institutionAccountMappings: InstitutionAccountMapping[]
+  institutionAccountSummary: InstitutionAccountSummary
   exportArtifacts: {
     mainFile: MovimentacaoReviewLine[]
     reviewFile: MovimentacaoReviewLine[]
@@ -1225,7 +1228,39 @@ function extractTickerFromProduto(raw: string): string {
  */
 export async function analyzeMovimentacaoRows(
   parsedLines: MovimentacaoParsedLine[],
+  userId?: string,
 ): Promise<AnalyzeMovimentacaoResult> {
+  const institutionNames = Array.from(
+    new Set(
+      parsedLines
+        .map((line) => line.normalized.instituicao)
+        .filter((value): value is string => Boolean(value?.trim()))
+        .map((value) => normalizeInstitutionName(value)),
+    ),
+  )
+
+  const client = userId
+    ? await prisma.client.findFirst({ where: { userId }, orderBy: { createdAt: 'asc' }, select: { id: true } })
+    : null
+
+  const [existingInstitutions, existingAccounts] = await Promise.all([
+    institutionNames.length
+      ? prisma.institution.findMany({
+          where: { name: { in: institutionNames } },
+          select: { id: true, name: true },
+        })
+      : Promise.resolve([]),
+    client?.id
+      ? prisma.account.findMany({
+          where: {
+            clientId: client.id,
+            institution: { name: { in: institutionNames } },
+          },
+          select: { institutionId: true, name: true },
+        })
+      : Promise.resolve([]),
+  ])
+
   const lines: MovimentacaoReviewLine[] = parsedLines.map((line, index) => {
     const normalizedCandidate = {
       ticker: line.normalized.ticker,
@@ -1254,6 +1289,7 @@ export async function analyzeMovimentacaoRows(
       type: normalizedType,
       ticker: line.normalized.ticker,
       instituicao: line.normalized.instituicao,
+      conta: '',
       quantity: line.normalized.quantity,
       price: line.normalized.price,
       total: line.normalized.total,
@@ -1261,11 +1297,70 @@ export async function analyzeMovimentacaoRows(
     }
   })
 
+  const institutionRowCount = new Map<string, number>()
+  for (const line of lines) {
+    if (!line.instituicao?.trim()) continue
+    const normalizedInstitution = normalizeInstitutionName(line.instituicao)
+    institutionRowCount.set(normalizedInstitution, (institutionRowCount.get(normalizedInstitution) ?? 0) + 1)
+  }
+
+  const existingInstitutionByName = new Map(existingInstitutions.map((institution) => [institution.name, institution]))
+  const existingAccountsByInstitutionId = new Map<string, typeof existingAccounts>()
+  for (const account of existingAccounts) {
+    const current = existingAccountsByInstitutionId.get(account.institutionId) ?? []
+    current.push(account)
+    existingAccountsByInstitutionId.set(account.institutionId, current)
+  }
+
+  const institutionAccountMappings: InstitutionAccountMapping[] = Array.from(institutionRowCount.entries()).map(
+    ([normalizedName, rowCount]) => {
+      const existingInstitution = existingInstitutionByName.get(normalizedName)
+      const existingInstitutionAccounts = existingInstitution
+        ? (existingAccountsByInstitutionId.get(existingInstitution.id) ?? [])
+            .map((account) => account.name.trim())
+            .filter(Boolean)
+            .sort((left, right) => left.localeCompare(right))
+        : []
+
+      const rowsForInstitution = lines.filter((line) => {
+        if (!line.instituicao?.trim()) return false
+        return normalizeInstitutionName(line.instituicao) === normalizedName
+      })
+      const rowsWithExplicitAccountCount = rowsForInstitution.filter((line) => Boolean(line.conta?.trim())).length
+      const rowsWithoutAccountCount = rowsForInstitution.length - rowsWithExplicitAccountCount
+      const autoFillStrategy = existingInstitutionAccounts.length === 1
+        ? 'SINGLE_ACCOUNT'
+        : existingInstitutionAccounts.length > 1
+          ? 'MULTIPLE_ACCOUNTS'
+          : 'NO_ACCOUNT_FOUND'
+
+      return {
+        normalizedInstitutionName: normalizedName,
+        displayInstitutionName: buildAccountName(normalizedName),
+        rowCount,
+        pendingRowReferenceIds: rowsForInstitution.map((line) => line.referenceId),
+        rowsWithExplicitAccountCount,
+        rowsWithoutAccountCount,
+        existingAccounts: existingInstitutionAccounts.map((name) => ({ name })),
+        autoFillStrategy,
+        suggestedAccountName: autoFillStrategy === 'SINGLE_ACCOUNT' ? existingInstitutionAccounts[0] : undefined,
+      }
+    },
+  )
+
+  const institutionAccountSummary: InstitutionAccountSummary = {
+    institutionsWithAutoFill: institutionAccountMappings.filter((mapping) => mapping.autoFillStrategy === 'SINGLE_ACCOUNT').length,
+    institutionsRequiringSelection: institutionAccountMappings.filter((mapping) => mapping.autoFillStrategy === 'MULTIPLE_ACCOUNTS').length,
+    totalRowsPendingAccountSelection: institutionAccountMappings.reduce((sum, mapping) => sum + mapping.rowsWithoutAccountCount, 0),
+  }
+
   const mainFile = lines.filter((line) => line.action === 'IMPORT')
   const reviewFile = lines.filter((line) => line.action !== 'IMPORT' || line.status !== 'OK')
 
   return {
     lines,
+    institutionAccountMappings,
+    institutionAccountSummary,
     exportArtifacts: {
       mainFile,
       reviewFile,
@@ -1321,7 +1416,7 @@ export async function confirmAndImportMovimentacaoForUser(
     }
 
     try {
-      const resolution = await resolveImportAccountForInstitution(line.instituicao, clientId, prisma)
+      const resolution = await resolveImportAccountForInstitution(line.instituicao, clientId, prisma, line.conta)
       const category = inferCategoryFromTickerAndMarket(line.ticker)
       const assetId = await upsertAssetFromImport(line.ticker, line.ticker, category)
 
@@ -1345,7 +1440,7 @@ export async function confirmAndImportMovimentacaoForUser(
         price: line.price ?? undefined,
         totalAmount: line.total ?? 0,
         date: ensureDate(line.date),
-        notes: `Importacao B3 - Movimentacao (${line.instituicao})`,
+        notes: `Importacao B3 - Movimentacao (${line.instituicao}${line.conta ? ` / ${line.conta}` : ''})`,
       })
 
       if (tx.idempotent) {

@@ -250,6 +250,11 @@ describe('ImportPageClient wizard', () => {
 
     render(<ImportPageClient />)
     await submitAnalyze()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Avançar →' })).toBeInTheDocument()
+    })
+
     fireEvent.click(screen.getByRole('button', { name: 'Avançar →' }))
 
     const confirmButton = screen.getByRole('button', { name: '✅ Confirmar e Importar' })
@@ -523,6 +528,172 @@ describe('ImportPageClient wizard', () => {
       expect(screen.getByText('Baixar arquivo REVISAR')).toBeInTheDocument()
       expect(screen.getByText('Baixar log JSON')).toBeInTheDocument()
     })
+  })
+
+  it('movimentação autopreenche conta única por instituição', async () => {
+    actionsMock.analyzeMovimentacaoFile.mockResolvedValueOnce({
+      lines: [
+        {
+          id: 'mov-1',
+          lineNumber: 2,
+          status: 'OK',
+          classification: 'LIQUIDACAO',
+          reason: 'linha_pronta',
+          action: 'IMPORT',
+          referenceId: 'mov-ref-1',
+          original: {
+            entradaSaida: 'Credito',
+            data: '06/04/2026',
+            movimentacao: 'Compra',
+            produto: 'PETR4 - PETROBRAS',
+            instituicao: 'BTG',
+            quantidade: '10',
+            precoUnitario: '40',
+            valorOperacao: '400',
+          },
+          normalized: {
+            date: '2026-04-06T00:00:00.000Z',
+            type: 'BUY',
+            ticker: 'PETR4',
+            instituicao: 'BTG',
+            quantity: 10,
+            price: 40,
+            total: 400,
+            referenceId: 'mov-ref-1',
+          },
+          date: '2026-04-06T00:00:00.000Z',
+          type: 'BUY',
+          ticker: 'PETR4',
+          instituicao: 'BTG',
+          conta: '',
+          quantity: 10,
+          price: 40,
+          total: 400,
+          issues: [],
+        },
+      ],
+      institutionAccountMappings: [
+        {
+          normalizedInstitutionName: 'BTG',
+          displayInstitutionName: 'Btg',
+          rowCount: 1,
+          pendingRowReferenceIds: ['mov-ref-1'],
+          rowsWithExplicitAccountCount: 0,
+          rowsWithoutAccountCount: 1,
+          existingAccounts: [{ name: 'Conta BTG' }],
+          autoFillStrategy: 'SINGLE_ACCOUNT',
+          suggestedAccountName: 'Conta BTG',
+        },
+      ],
+      institutionAccountSummary: {
+        institutionsWithAutoFill: 1,
+        institutionsRequiringSelection: 0,
+        totalRowsPendingAccountSelection: 1,
+      },
+      exportArtifacts: {
+        mainFile: [],
+        reviewFile: [],
+        decisionLog: '{"generatedAt":"2026-04-16T00:00:00.000Z","totalRows":1,"decisions":[]}',
+      },
+      summary: { totalRows: 1, importableRows: 1, reviewRows: 0 },
+    })
+
+    render(<ImportPageClient />)
+
+    const button = screen.getByRole('button', { name: 'Analisar movimentação' })
+    const form = button.closest('form')
+    expect(form).toBeTruthy()
+    fireEvent.submit(form as HTMLFormElement)
+
+    await waitFor(() => {
+      expect(screen.getByText(/Conta única detectada:/i)).toBeInTheDocument()
+    })
+
+    expect(screen.getAllByDisplayValue('Conta BTG').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('movimentação permite aplicar conta em lote por instituição', async () => {
+    actionsMock.analyzeMovimentacaoFile.mockResolvedValueOnce({
+      lines: [
+        {
+          id: 'mov-1',
+          lineNumber: 2,
+          status: 'OK',
+          classification: 'LIQUIDACAO',
+          reason: 'linha_pronta',
+          action: 'IMPORT',
+          referenceId: 'mov-ref-1',
+          original: {
+            entradaSaida: 'Credito',
+            data: '06/04/2026',
+            movimentacao: 'Compra',
+            produto: 'PETR4 - PETROBRAS',
+            instituicao: 'BTG',
+            quantidade: '10',
+            precoUnitario: '40',
+            valorOperacao: '400',
+          },
+          normalized: {
+            date: '2026-04-06T00:00:00.000Z',
+            type: 'BUY',
+            ticker: 'PETR4',
+            instituicao: 'BTG',
+            quantity: 10,
+            price: 40,
+            total: 400,
+            referenceId: 'mov-ref-1',
+          },
+          date: '2026-04-06T00:00:00.000Z',
+          type: 'BUY',
+          ticker: 'PETR4',
+          instituicao: 'BTG',
+          conta: '',
+          quantity: 10,
+          price: 40,
+          total: 400,
+          issues: [],
+        },
+      ],
+      institutionAccountMappings: [
+        {
+          normalizedInstitutionName: 'BTG',
+          displayInstitutionName: 'Btg',
+          rowCount: 1,
+          pendingRowReferenceIds: ['mov-ref-1'],
+          rowsWithExplicitAccountCount: 0,
+          rowsWithoutAccountCount: 1,
+          existingAccounts: [{ name: 'Conta A' }, { name: 'Conta B' }],
+          autoFillStrategy: 'MULTIPLE_ACCOUNTS',
+        },
+      ],
+      institutionAccountSummary: {
+        institutionsWithAutoFill: 0,
+        institutionsRequiringSelection: 1,
+        totalRowsPendingAccountSelection: 1,
+      },
+      exportArtifacts: {
+        mainFile: [],
+        reviewFile: [],
+        decisionLog: '{"generatedAt":"2026-04-16T00:00:00.000Z","totalRows":1,"decisions":[]}',
+      },
+      summary: { totalRows: 1, importableRows: 1, reviewRows: 0 },
+    })
+
+    render(<ImportPageClient />)
+
+    const button = screen.getByRole('button', { name: 'Analisar movimentação' })
+    const form = button.closest('form')
+    expect(form).toBeTruthy()
+    fireEvent.submit(form as HTMLFormElement)
+
+    await waitFor(() => {
+      expect(screen.getByText('Aplicar nas linhas sem conta')).toBeInTheDocument()
+    })
+
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'Conta A' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar nas linhas sem conta' }))
+
+    expect(screen.getAllByDisplayValue('Conta A').length).toBeGreaterThanOrEqual(1)
   })
 
   it('posição mostra preview com originais/normalizados e exportações antes de confirmar', async () => {
