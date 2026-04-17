@@ -147,4 +147,31 @@ describe('analyzeNegociacaoRows institution previews', () => {
     expect(preview?.isNew).toBe(true)
     expect(preview?.rowCount).toBe(1)
   })
+
+  it('retorna estratégia SINGLE_ACCOUNT quando há uma única conta na instituição', async () => {
+    const institutionName = 'NU INVEST CORRETORA DE VALORES S.A.'
+
+    const result = await analyzeNegociacaoRows([
+      {
+        date: new Date('2026-04-15T00:00:00.000Z'),
+        type: 'BUY',
+        ticker: 'ATV1011',
+        mercado: 'Mercado a Vista',
+        instituicao: institutionName,
+        quantity: 1,
+        price: 10,
+        total: 10,
+        referenceId: 'ref-account-map',
+      },
+    ], userId)
+
+    const mapping = result.institutionAccountMappings.find(
+      (item) => item.normalizedInstitutionName === normalizeInstitutionName(institutionName),
+    )
+
+    expect(mapping).toBeDefined()
+    expect(mapping?.autoFillStrategy).toBe('SINGLE_ACCOUNT')
+    expect(mapping?.suggestedAccountName).toBeTruthy()
+    expect(result.institutionAccountSummary.institutionsWithAutoFill).toBeGreaterThanOrEqual(1)
+  })
 })

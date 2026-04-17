@@ -186,12 +186,58 @@ function classLabel(option: SerializableAssetClassOption) {
   return `${option.name} (${option.code})`
 }
 
+function buildNegociacaoReadyLineId(referenceId: string) {
+  return `ready-${referenceId}`
+}
+
+function buildNegociacaoUnresolvedLineId(ticker: string, referenceId: string) {
+  return `unresolved-${ticker}-${referenceId}`
+}
+
+function applyAccountToNegociacaoResponse(
+  response: AnalyzeNegociacaoResponse,
+  institutionName: string,
+  accountName: string,
+  onlyEmpty: boolean,
+): AnalyzeNegociacaoResponse {
+  const shouldApply = (currentAccount?: string) => !onlyEmpty || !currentAccount?.trim()
+
+  return {
+    ...response,
+    ready: response.ready.map((row) =>
+      row.instituicao === institutionName && shouldApply(row.conta)
+        ? { ...row, conta: accountName }
+        : row,
+    ),
+    unresolvedAssets: response.unresolvedAssets.map((asset) => ({
+      ...asset,
+      rows: asset.rows.map((row) =>
+        row.instituicao === institutionName && shouldApply(row.conta)
+          ? { ...row, conta: accountName }
+          : row,
+      ),
+    })),
+  }
+}
+
+function buildInitialNegociacaoAnalysis(response: AnalyzeNegociacaoResponse): AnalyzeNegociacaoResponse {
+  return response.institutionAccountMappings.reduce((current, mapping) => {
+    if (mapping.autoFillStrategy !== 'SINGLE_ACCOUNT' || !mapping.suggestedAccountName) {
+      return current
+    }
+
+    return applyAccountToNegociacaoResponse(current, mapping.normalizedInstitutionName, mapping.suggestedAccountName, true)
+  }, response)
+}
+
 function NegociacaoWizardCard() {
   const [step, setStep] = useState<WizardStep>(1)
   const [analysis, setAnalysis] = useState<AnalyzeNegociacaoResponse | null>(null)
   const [unresolvedAssets, setUnresolvedAssets] = useState<SerializableUnresolvedAsset[]>([])
   const [missingClasses, setMissingClasses] = useState<MissingClassDraft[]>([])
   const [negociacaoRowActions, setNegociacaoRowActions] = useState<Record<string, 'IMPORT' | 'SKIP'>>({})
+  const [institutionAccountSelections, setInstitutionAccountSelections] = useState<Record<string, string>>({})
+  const [negociacaoInstitutionFilter, setNegociacaoInstitutionFilter] = useState('TODOS')
   const [result, setResult] = useState<ConfirmImportResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -318,26 +364,87 @@ function NegociacaoWizardCard() {
         return
       }
 
-      const initialMissingClasses = response.missingClasses.map((missingClass) => ({
+      const hydratedResponse = buildInitialNegociacaoAnalysis(response)
+
+      const initialMissingClasses = hydratedResponse.missingClasses.map((missingClass) => ({
         ...missingClass,
         confirmAutoCreate: true,
       }))
 
-      setAnalysis(response)
+      const initialInstitutionSelections = Object.fromEntries(
+        hydratedResponse.institutionAccountMappings.map((mapping) => [
+          mapping.normalizedInstitutionName,
+          mapping.suggestedAccountName ?? mapping.existingAccounts[0]?.name ?? '',
+        ]),
+      )
+
+      setAnalysis(hydratedResponse)
       setMissingClasses(initialMissingClasses)
-      initializeAssetResolutions(response, initialMissingClasses)
+      initializeAssetResolutions(hydratedResponse, initialMissingClasses)
+      setInstitutionAccountSelections(initialInstitutionSelections)
+      setNegociacaoInstitutionFilter('TODOS')
       const initialActions: Record<string, 'IMPORT' | 'SKIP'> = {}
-      for (const row of response.ready) {
-        initialActions[`ready-${row.referenceId}`] = 'IMPORT'
+      for (const row of hydratedResponse.ready) {
+        initialActions[buildNegociacaoReadyLineId(row.referenceId)] = 'IMPORT'
       }
-      for (const asset of response.unresolvedAssets) {
+      for (const asset of hydratedResponse.unresolvedAssets) {
         for (const row of asset.rows) {
-          initialActions[`unresolved-${asset.ticker}-${row.referenceId}`] = 'IMPORT'
+          initialActions[buildNegociacaoUnresolvedLineId(asset.ticker, row.referenceId)] = 'IMPORT'
         }
       }
       setNegociacaoRowActions(initialActions)
-      setStep(response.unresolvedAssets.length > 0 ? 2 : 3)
+      setStep(hydratedResponse.unresolvedAssets.length > 0 ? 2 : 3)
     })
+  }
+
+  const updateNegociacaoRow = (id: string, patch: Partial<(typeof analysis extends AnalyzeNegociacaoResponse | null ? SerializableUnresolvedAsset['rows'][number] : never)>) => {
+    setAnalysis((current) => {
+      if (!current) return current
+
+      return {
+        ...current,
+        ready: current.ready.map((row) => {
+          const rowId = buildNegociacaoReadyLineId(row.referenceId)
+          return rowId === id ? { ...row, ...patch } : row
+        }),
+      }
+    })
+
+    setUnresolvedAssets((current) =>
+      current.map((asset) => ({
+        ...asset,
+        rows: asset.rows.map((row) => {
+          const rowId = buildNegociacaoUnresolvedLineId(asset.ticker, row.referenceId)
+          return rowId === id ? { ...row, ...patch } : row
+        }),
+      })),
+    )
+  }
+
+  const applyAccountSelectionToInstitution = (institutionName: string, accountName: string, onlyEmpty: boolean) => {
+    const trimmedAccountName = accountName.trim()
+    if (!trimmedAccountName) return
+
+    setInstitutionAccountSelections((current) => ({
+      ...current,
+      [institutionName]: trimmedAccountName,
+    }))
+
+    setAnalysis((current) => {
+      if (!current) return current
+      return applyAccountToNegociacaoResponse(current, institutionName, trimmedAccountName, onlyEmpty)
+    })
+
+    setUnresolvedAssets((current) =>
+      current.map((asset) => ({
+        ...asset,
+        rows: asset.rows.map((row) =>
+          row.instituicao === institutionName && (!onlyEmpty || !row.conta?.trim())
+            ? { ...row, conta: trimmedAccountName }
+            : row,
+        ),
+      })),
+    )
   }
 
   const handleConfirmAllFii = () => {
@@ -402,12 +509,12 @@ function NegociacaoWizardCard() {
   const handleConfirmImport = () => {
     if (!analysis) return
 
-    const filteredReadyRows = analysis.ready.filter((row) => negociacaoRowActions[`ready-${row.referenceId}`] !== 'SKIP')
+    const filteredReadyRows = analysis.ready.filter((row) => negociacaoRowActions[buildNegociacaoReadyLineId(row.referenceId)] !== 'SKIP')
 
     const filteredResolutions = unresolvedAssets
       .map((asset) => ({
         ...asset,
-        rows: asset.rows.filter((row) => negociacaoRowActions[`unresolved-${asset.ticker}-${row.referenceId}`] !== 'SKIP'),
+        rows: asset.rows.filter((row) => negociacaoRowActions[buildNegociacaoUnresolvedLineId(asset.ticker, row.referenceId)] !== 'SKIP'),
       }))
       .filter((asset) => asset.rows.length > 0)
 
@@ -469,11 +576,30 @@ function NegociacaoWizardCard() {
   const associateList = unresolvedAssets.filter((asset) => asset.resolution?.action === 'associate')
   const classesToCreateList = missingClasses.filter((missingClass) => missingClass.confirmAutoCreate)
   const institutionPreviews = analysis?.institutionPreviews ?? []
+  const institutionAccountMappings = useMemo(() => {
+    if (!analysis) return []
+
+    return analysis.institutionAccountMappings.map((mapping) => {
+      const currentRows = [
+        ...analysis.ready.filter((row) => row.instituicao === mapping.normalizedInstitutionName),
+        ...unresolvedAssets.flatMap((asset) => asset.rows.filter((row) => row.instituicao === mapping.normalizedInstitutionName)),
+      ]
+      const rowsWithoutAccountCount = currentRows.filter((row) => !row.conta?.trim()).length
+      const rowsWithExplicitAccountCount = currentRows.length - rowsWithoutAccountCount
+
+      return {
+        ...mapping,
+        rowCount: currentRows.length,
+        rowsWithoutAccountCount,
+        rowsWithExplicitAccountCount,
+      }
+    })
+  }, [analysis, unresolvedAssets])
   const negociacaoReviewLines: ImportReviewTableLine[] = useMemo(() => {
     if (!analysis) return []
 
     const readyLines = analysis.ready.map((row) => {
-      const id = `ready-${row.referenceId}`
+      const id = buildNegociacaoReadyLineId(row.referenceId)
       return {
         id,
         status: 'OK' as const,
@@ -482,7 +608,7 @@ function NegociacaoWizardCard() {
         type: row.type,
         ticker: row.ticker,
         instituicao: row.instituicao,
-        conta: '',
+        conta: row.conta ?? '',
         original: {
           mercado: row.mercado,
           instituicao: row.instituicao,
@@ -500,7 +626,7 @@ function NegociacaoWizardCard() {
 
     const unresolvedLines = unresolvedAssets.flatMap((asset) =>
       asset.rows.map((row) => {
-        const id = `unresolved-${asset.ticker}-${row.referenceId}`
+        const id = buildNegociacaoUnresolvedLineId(asset.ticker, row.referenceId)
         return {
           id,
           status: 'REVISAR' as const,
@@ -509,7 +635,7 @@ function NegociacaoWizardCard() {
           type: row.type,
           ticker: row.ticker,
           instituicao: row.instituicao,
-          conta: '',
+          conta: row.conta ?? '',
           original: {
             mercado: row.mercado,
             instituicao: row.instituicao,
@@ -852,15 +978,123 @@ function NegociacaoWizardCard() {
             </button>
           </div>
 
+          <div className="rounded-xl border border-gray-200 p-4 space-y-3">
+            <div className="space-y-1 text-sm text-gray-700">
+              <p className="font-semibold text-gray-900">Contas por instituição</p>
+              <p>
+                Autopreenchimento: {analysis.institutionAccountSummary.institutionsWithAutoFill} instituição(ões) com conta única.
+                Seleção necessária: {analysis.institutionAccountSummary.institutionsRequiringSelection}.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              {institutionAccountMappings.map((mapping) => {
+                const selectedAccount = institutionAccountSelections[mapping.normalizedInstitutionName] ?? ''
+                const needsSelection = mapping.autoFillStrategy === 'MULTIPLE_ACCOUNTS'
+                const needsManualEntry = mapping.autoFillStrategy === 'NO_ACCOUNT_FOUND'
+
+                return (
+                  <div key={mapping.normalizedInstitutionName} className="rounded-lg border border-gray-200 p-3">
+                    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                      <div className="text-sm text-gray-700">
+                        <p className="font-semibold text-gray-900">{mapping.normalizedInstitutionName}</p>
+                        <p>
+                          {mapping.rowCount} linha(s) | sem conta: {mapping.rowsWithoutAccountCount} | com conta: {mapping.rowsWithExplicitAccountCount}
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700"
+                        onClick={() => setNegociacaoInstitutionFilter(mapping.normalizedInstitutionName)}
+                      >
+                        Revisar linhas desta instituição
+                      </button>
+                    </div>
+
+                    {mapping.autoFillStrategy === 'SINGLE_ACCOUNT' && mapping.suggestedAccountName && (
+                      <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                        Conta única detectada: <strong>{mapping.suggestedAccountName}</strong>. As linhas sem conta foram preenchidas automaticamente.
+                      </div>
+                    )}
+
+                    {(needsSelection || needsManualEntry) && (
+                      <div className="mt-3 flex flex-col gap-2 md:flex-row md:items-center">
+                        {needsSelection ? (
+                          <select
+                            className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                            value={selectedAccount}
+                            onChange={(event) => {
+                              const nextValue = event.target.value
+                              setInstitutionAccountSelections((current) => ({
+                                ...current,
+                                [mapping.normalizedInstitutionName]: nextValue,
+                              }))
+                            }}
+                          >
+                            <option value="">Selecione a conta</option>
+                            {mapping.existingAccounts.map((account) => (
+                              <option key={`${mapping.normalizedInstitutionName}-${account.name}`} value={account.name}>
+                                {account.name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                            placeholder="Informe a conta padrão"
+                            value={selectedAccount}
+                            onChange={(event) => {
+                              const nextValue = event.target.value
+                              setInstitutionAccountSelections((current) => ({
+                                ...current,
+                                [mapping.normalizedInstitutionName]: nextValue,
+                              }))
+                            }}
+                          />
+                        )}
+
+                        <button
+                          type="button"
+                          className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-blue-300"
+                          disabled={!selectedAccount.trim() || mapping.rowsWithoutAccountCount === 0}
+                          onClick={() => applyAccountSelectionToInstitution(mapping.normalizedInstitutionName, selectedAccount, true)}
+                        >
+                          Aplicar nas linhas sem conta
+                        </button>
+
+                        <button
+                          type="button"
+                          className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 disabled:cursor-not-allowed disabled:bg-gray-100"
+                          disabled={!selectedAccount.trim() || mapping.rowCount === 0}
+                          onClick={() => applyAccountSelectionToInstitution(mapping.normalizedInstitutionName, selectedAccount, false)}
+                        >
+                          Sobrescrever todas as linhas
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
           <ImportReviewTable
             title="Preview de Negociação"
             lines={negociacaoReviewLines}
+            institutionFilter={negociacaoInstitutionFilter}
+            onInstitutionFilterChange={setNegociacaoInstitutionFilter}
             onLineChange={(id, patch) => {
-              if (!patch.action) return
-              setNegociacaoRowActions((current) => ({
-                ...current,
-                [id]: patch.action,
-              }))
+              if (patch.action) {
+                setNegociacaoRowActions((current) => ({
+                  ...current,
+                  [id]: patch.action,
+                }))
+              }
+
+              if (typeof patch.conta === 'string') {
+                updateNegociacaoRow(id, { conta: patch.conta })
+              }
             }}
           />
 

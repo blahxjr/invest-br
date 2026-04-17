@@ -90,6 +90,24 @@ function buildAnalyzeResponse() {
         rowCount: 1,
       },
     ],
+    institutionAccountMappings: [
+      {
+        normalizedInstitutionName: 'BTG',
+        displayInstitutionName: 'Btg',
+        rowCount: 2,
+        pendingRowReferenceIds: ['ready-1', 'x'],
+        rowsWithExplicitAccountCount: 0,
+        rowsWithoutAccountCount: 2,
+        existingAccounts: [{ name: 'Conta BTG 1' }],
+        autoFillStrategy: 'SINGLE_ACCOUNT',
+        suggestedAccountName: 'Conta BTG 1',
+      },
+    ],
+    institutionAccountSummary: {
+      institutionsWithAutoFill: 1,
+      institutionsRequiringSelection: 0,
+      totalRowsPendingAccountSelection: 2,
+    },
     summary: {
       totalRows: 2,
       readyCount: 1,
@@ -244,6 +262,96 @@ describe('ImportPageClient wizard', () => {
     await act(async () => {
       resolveImport?.({ assetsCreated: 1, institutionsCreated: 1, accountsCreated: 1, transactionsImported: 1, transactionsSkipped: 0 })
     })
+  })
+
+  it('permite digitar conta na revisão de negociação e envia no payload de confirmação', async () => {
+    actionsMock.analyzeNegociacaoFile.mockResolvedValueOnce(buildAnalyzeResponse())
+
+    render(<ImportPageClient />)
+    await submitAnalyze()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Avançar →' })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Avançar →' }))
+
+    const textboxes = screen.getAllByRole('textbox')
+    const accountInput = textboxes[3] as HTMLInputElement
+
+    fireEvent.change(accountInput, { target: { value: '1234' } })
+
+    expect(accountInput.value).toBe('1234')
+
+    fireEvent.click(screen.getByRole('button', { name: '✅ Confirmar e Importar' }))
+
+    await waitFor(() => {
+      expect(actionsMock.confirmAndImportNegociacao).toHaveBeenCalledWith(
+        expect.objectContaining({
+          readyRows: expect.arrayContaining([
+            expect.objectContaining({ conta: '1234' }),
+          ]),
+        }),
+      )
+    })
+  })
+
+  it('autopreenche conta única por instituição na revisão de negociação', async () => {
+    actionsMock.analyzeNegociacaoFile.mockResolvedValueOnce(buildAnalyzeResponse())
+
+    render(<ImportPageClient />)
+    await submitAnalyze()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Avançar →' })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Avançar →' }))
+
+    expect(screen.getByText(/Conta única detectada:/i)).toBeInTheDocument()
+
+    const textboxes = screen.getAllByRole('textbox')
+    const accountInput = textboxes[3] as HTMLInputElement
+    expect(accountInput.value).toBe('Conta BTG 1')
+  })
+
+  it('permite aplicar em lote a conta selecionada quando há múltiplas contas', async () => {
+    const response = buildAnalyzeResponse()
+    response.institutionAccountMappings = [
+      {
+        normalizedInstitutionName: 'BTG',
+        displayInstitutionName: 'Btg',
+        rowCount: 2,
+        pendingRowReferenceIds: ['ready-1', 'x'],
+        rowsWithExplicitAccountCount: 0,
+        rowsWithoutAccountCount: 2,
+        existingAccounts: [{ name: 'Conta A' }, { name: 'Conta B' }],
+        autoFillStrategy: 'MULTIPLE_ACCOUNTS',
+      },
+    ]
+    response.institutionAccountSummary = {
+      institutionsWithAutoFill: 0,
+      institutionsRequiringSelection: 1,
+      totalRowsPendingAccountSelection: 2,
+    }
+
+    actionsMock.analyzeNegociacaoFile.mockResolvedValueOnce(response)
+
+    render(<ImportPageClient />)
+    await submitAnalyze()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Avançar →' })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Avançar →' }))
+
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'Conta A' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar nas linhas sem conta' }))
+
+    const textboxes = screen.getAllByRole('textbox')
+    const accountInput = textboxes[3] as HTMLInputElement
+    expect(accountInput.value).toBe('Conta A')
   })
 
   it('abre confirmacao e executa limpeza da base de importacao', async () => {

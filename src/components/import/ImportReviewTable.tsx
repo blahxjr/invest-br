@@ -22,6 +22,8 @@ type ImportReviewTableProps = {
   title: string
   lines: ImportReviewTableLine[]
   onLineChange: (id: string, patch: Partial<ImportReviewTableLine>) => void
+  institutionFilter?: string
+  onInstitutionFilterChange?: (value: string) => void
 }
 
 function stringValue(value: string | number | null | undefined): string {
@@ -33,11 +35,12 @@ function uniqueValues(values: Array<string | undefined>): string[] {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value && value.trim())))).sort()
 }
 
-export function ImportReviewTable({ title, lines, onLineChange }: ImportReviewTableProps) {
+export function ImportReviewTable({ title, lines, onLineChange, institutionFilter, onInstitutionFilterChange }: ImportReviewTableProps) {
   const [statusFilter, setStatusFilter] = useState<'TODOS' | ImportReviewStatus>('TODOS')
   const [typeFilter, setTypeFilter] = useState('TODOS')
-  const [institutionFilter, setInstitutionFilter] = useState('TODOS')
+  const [institutionFilterInternal, setInstitutionFilterInternal] = useState('TODOS')
   const [accountFilter, setAccountFilter] = useState('TODOS')
+  const resolvedInstitutionFilter = institutionFilter ?? institutionFilterInternal
 
   const types = useMemo(() => uniqueValues(lines.map((line) => line.type)), [lines])
   const institutions = useMemo(() => uniqueValues(lines.map((line) => line.instituicao)), [lines])
@@ -46,10 +49,10 @@ export function ImportReviewTable({ title, lines, onLineChange }: ImportReviewTa
   const filteredLines = useMemo(() => lines.filter((line) => {
     if (statusFilter !== 'TODOS' && line.status !== statusFilter) return false
     if (typeFilter !== 'TODOS' && (line.type ?? '') !== typeFilter) return false
-    if (institutionFilter !== 'TODOS' && (line.instituicao ?? '') !== institutionFilter) return false
+    if (resolvedInstitutionFilter !== 'TODOS' && (line.instituicao ?? '') !== resolvedInstitutionFilter) return false
     if (accountFilter !== 'TODOS' && (line.conta ?? '') !== accountFilter) return false
     return true
-  }), [lines, statusFilter, typeFilter, institutionFilter, accountFilter])
+  }), [lines, statusFilter, typeFilter, resolvedInstitutionFilter, accountFilter])
 
   const summary = useMemo(() => ({
     total: lines.length,
@@ -81,7 +84,17 @@ export function ImportReviewTable({ title, lines, onLineChange }: ImportReviewTa
             <option key={type} value={type}>{type}</option>
           ))}
         </select>
-        <select className="rounded-md border border-gray-300 px-3 py-2 text-sm" value={institutionFilter} onChange={(event) => setInstitutionFilter(event.target.value)}>
+        <select
+          className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+          value={resolvedInstitutionFilter}
+          onChange={(event) => {
+            const nextValue = event.target.value
+            onInstitutionFilterChange?.(nextValue)
+            if (!onInstitutionFilterChange) {
+              setInstitutionFilterInternal(nextValue)
+            }
+          }}
+        >
           <option value="TODOS">Instituição: Todas</option>
           {institutions.map((institution) => (
             <option key={institution} value={institution}>{institution}</option>

@@ -23,6 +23,7 @@ export type ImportResult = {
 
 export type ParsedRow = NegociacaoRow & {
   assetId?: string
+  conta?: string
 }
 
 export type AssetClassOption = {
@@ -72,11 +73,33 @@ export type AnalyzeNegociacaoSummary = {
   uniqueUnresolvedTickers: string[]
 }
 
+export type InstitutionAccountMapping = {
+  normalizedInstitutionName: string
+  displayInstitutionName: string
+  rowCount: number
+  pendingRowReferenceIds: string[]
+  rowsWithExplicitAccountCount: number
+  rowsWithoutAccountCount: number
+  existingAccounts: Array<{
+    name: string
+  }>
+  autoFillStrategy: 'SINGLE_ACCOUNT' | 'MULTIPLE_ACCOUNTS' | 'NO_ACCOUNT_FOUND'
+  suggestedAccountName?: string
+}
+
+export type InstitutionAccountSummary = {
+  institutionsWithAutoFill: number
+  institutionsRequiringSelection: number
+  totalRowsPendingAccountSelection: number
+}
+
 export type AnalyzeNegociacaoResult = ParsedNegociacaoResult & {
   missingClasses: MissingClass[]
   availableClasses: AssetClassOption[]
   existingAssets: ExistingAssetOption[]
   institutionPreviews: InstitutionPreview[]
+  institutionAccountMappings: InstitutionAccountMapping[]
+  institutionAccountSummary: InstitutionAccountSummary
   summary: AnalyzeNegociacaoSummary
 }
 
@@ -341,6 +364,16 @@ export function buildAccountName(institutionName: string): string {
   return words.join(' ') || institutionName.slice(0, 30)
 }
 
+function normalizeAccountName(accountName: string | null | undefined, institutionName: string): string {
+  const normalized = accountName?.trim()
+  if (normalized) return normalized
+  return buildAccountName(institutionName)
+}
+
+function buildInstitutionAccountKey(institutionName: string, accountName: string): string {
+  return `${normalizeInstitutionName(institutionName)}|${normalizeAccountName(accountName, institutionName)}`
+}
+
 function institutionTypeToPtBr(type: InstitutionType): InstitutionPreview['inferredType'] {
   if (type === InstitutionType.BROKER) return 'Corretora'
   if (type === InstitutionType.BANK) return 'Banco'
@@ -393,6 +426,7 @@ function buildNegociacaoIdempotencyKey(row: ParsedRow): string {
     row.quantity.toString(),
     row.price.toString(),
     row.instituicao,
+    normalizeAccountName(row.conta, row.instituicao),
   ].join('|')
 
   const digest = createHash('sha256').update(raw).digest('hex')
@@ -525,16 +559,18 @@ export async function upsertAccountForInstitution(
   institutionName: string,
   clientId: string,
   tx: TxClient,
+  accountName?: string,
 ): Promise<string> {
+  const normalizedAccountName = normalizeAccountName(accountName, institutionName)
   const existing = await tx.account.findFirst({
-    where: { institutionId, clientId },
+    where: { institutionId, clientId, name: normalizedAccountName },
     select: { id: true },
   })
   if (existing) return existing.id
 
   const created = await tx.account.create({
     data: {
-      name: buildAccountName(institutionName),
+      name: normalizedAccountName,
       type: AccountType.BROKERAGE,
       clientId,
       institutionId,
@@ -551,8 +587,10 @@ export async function resolveImportAccountForInstitution(
   institutionName: string,
   clientId: string,
   tx: TxClient,
+  accountName?: string,
 ): Promise<ImportAccountResolution> {
   const normalizedName = normalizeInstitutionName(institutionName)
+  const normalizedAccountName = normalizeAccountName(accountName, normalizedName)
 
   const existingInstitution = await tx.institution.findFirst({
     where: { name: normalizedName },
@@ -562,19 +600,19 @@ export async function resolveImportAccountForInstitution(
   const institutionId = await upsertInstitution(normalizedName, tx)
 
   const existingAccount = await tx.account.findFirst({
-    where: { institutionId, clientId },
+    where: { institutionId, clientId, name: normalizedAccountName },
     select: { id: true, name: true },
   })
 
-  const accountId = await upsertAccountForInstitution(institutionId, normalizedName, clientId, tx)
+  const accountId = await upsertAccountForInstitution(institutionId, normalizedName, clientId, tx, normalizedAccountName)
 
-  const accountName = existingAccount?.name || buildAccountName(normalizedName)
+  const resolvedAccountName = existingAccount?.name || normalizedAccountName
 
   return {
     institutionName: normalizedName,
     institutionId,
     accountId,
-    accountName,
+    accountName: resolvedAccountName,
     institutionCreated: !existingInstitution,
     accountCreated: !existingAccount,
   }
@@ -730,26 +768,71 @@ export async function analyzeNegociacaoRows(rows: NegociacaoRow[], userId?: stri
   }
 
   const existingInstitutionByName = new Map(existingInstitutions.map((institution) => [institution.name, institution]))
-  const existingAccountByInstitutionId = new Map(existingAccounts.map((account) => [account.institutionId, account]))
+  const existingAccountsByInstitutionId = new Map<string, typeof existingAccounts>()
+  for (const account of existingAccounts) {
+    const current = existingAccountsByInstitutionId.get(account.institutionId) ?? []
+    current.push(account)
+    existingAccountsByInstitutionId.set(account.institutionId, current)
+  }
 
   const institutionPreviews: InstitutionPreview[] = Array.from(institutionRowCount.entries()).map(
     ([normalizedName, rowCount]) => {
       const existing = existingInstitutionByName.get(normalizedName)
       const inferred = existing?.type ?? inferInstitutionType(normalizedName)
-      const account = existing ? existingAccountByInstitutionId.get(existing.id) : null
-      const accountName = account?.name || buildAccountName(normalizedName)
+      const accounts = existing ? existingAccountsByInstitutionId.get(existing.id) ?? [] : []
+      const firstAccount = accounts[0] ?? null
+      const accountName = firstAccount?.name || buildAccountName(normalizedName)
       return {
         normalizedName,
         displayName: buildAccountName(normalizedName),
         inferredType: institutionTypeToPtBr(inferred),
         isNew: !existing,
         accountName,
-        accountStatus: account ? 'JÁ EXISTE' : 'NOVA',
-        isAccountNew: !account,
+        accountStatus: firstAccount ? 'JÁ EXISTE' : 'NOVA',
+        isAccountNew: !firstAccount,
         rowCount,
       }
     },
   )
+
+  const institutionAccountMappings: InstitutionAccountMapping[] = Array.from(institutionRowCount.entries()).map(
+    ([normalizedName, rowCount]) => {
+      const existingInstitution = existingInstitutionByName.get(normalizedName)
+      const existingInstitutionAccounts = existingInstitution
+        ? (existingAccountsByInstitutionId.get(existingInstitution.id) ?? [])
+            .map((account) => account.name.trim())
+            .filter(Boolean)
+            .sort((left, right) => left.localeCompare(right))
+        : []
+
+      const rowsForInstitution = parsedRows.filter((row) => normalizeInstitutionName(row.instituicao) === normalizedName)
+      const rowsWithExplicitAccountCount = rowsForInstitution.filter((row) => Boolean(row.conta?.trim())).length
+      const rowsWithoutAccountCount = rowsForInstitution.length - rowsWithExplicitAccountCount
+      const autoFillStrategy = existingInstitutionAccounts.length === 1
+        ? 'SINGLE_ACCOUNT'
+        : existingInstitutionAccounts.length > 1
+          ? 'MULTIPLE_ACCOUNTS'
+          : 'NO_ACCOUNT_FOUND'
+
+      return {
+        normalizedInstitutionName: normalizedName,
+        displayInstitutionName: buildAccountName(normalizedName),
+        rowCount,
+        pendingRowReferenceIds: rowsForInstitution.map((row) => row.referenceId),
+        rowsWithExplicitAccountCount,
+        rowsWithoutAccountCount,
+        existingAccounts: existingInstitutionAccounts.map((name) => ({ name })),
+        autoFillStrategy,
+        suggestedAccountName: autoFillStrategy === 'SINGLE_ACCOUNT' ? existingInstitutionAccounts[0] : undefined,
+      }
+    },
+  )
+
+  const institutionAccountSummary: InstitutionAccountSummary = {
+    institutionsWithAutoFill: institutionAccountMappings.filter((mapping) => mapping.autoFillStrategy === 'SINGLE_ACCOUNT').length,
+    institutionsRequiringSelection: institutionAccountMappings.filter((mapping) => mapping.autoFillStrategy === 'MULTIPLE_ACCOUNTS').length,
+    totalRowsPendingAccountSelection: institutionAccountMappings.reduce((sum, mapping) => sum + mapping.rowsWithoutAccountCount, 0),
+  }
 
   const missingClasses: MissingClass[] = Array.from(missingByInferredCode.entries()).map(([inferredCode, tickersSet]) => {
     const suggestion = CLASS_SUGGESTIONS[inferredCode] ?? CLASS_SUGGESTIONS.OUTRO
@@ -771,6 +854,8 @@ export async function analyzeNegociacaoRows(rows: NegociacaoRow[], userId?: stri
     availableClasses,
     existingAssets,
     institutionPreviews,
+    institutionAccountMappings,
+    institutionAccountSummary,
     summary: {
       totalRows: parsedRows.length,
       readyCount: ready.length,
@@ -812,17 +897,22 @@ export async function confirmAndImportNegociacaoForUser(
 
   const result = await prisma.$transaction(async (tx) => {
     const resolvedAssetIdByTicker = new Map<string, string>()
-    const accountByInstitution = new Map<string, string>()
+    const accountByInstitutionAndName = new Map<string, string>()
     let institutionsCreated = 0
     let accountsCreated = 0
 
     for (const instName of uniqueInstitutions) {
-      const resolution = await resolveImportAccountForInstitution(instName, clientId, tx)
+      const rowsForInstitution = rowsToImport.filter((row) => normalizeInstitutionName(row.instituicao) === instName)
+      const accountNames = Array.from(new Set(rowsForInstitution.map((row) => normalizeAccountName(row.conta, instName))))
 
-      if (resolution.institutionCreated) institutionsCreated++
-      if (resolution.accountCreated) accountsCreated++
+      for (const accountName of accountNames) {
+        const resolution = await resolveImportAccountForInstitution(instName, clientId, tx, accountName)
 
-      accountByInstitution.set(instName, resolution.accountId)
+        if (resolution.institutionCreated) institutionsCreated++
+        if (resolution.accountCreated) accountsCreated++
+
+        accountByInstitutionAndName.set(buildInstitutionAccountKey(instName, accountName), resolution.accountId)
+      }
     }
 
     for (const classInput of payload.classesToCreate) {
@@ -953,7 +1043,7 @@ export async function confirmAndImportNegociacaoForUser(
 
     for (const row of rowsToImport) {
       const normalizedInst = normalizeInstitutionName(row.instituicao ?? '')
-      const rowAccountId = accountByInstitution.get(normalizedInst)
+      const rowAccountId = accountByInstitutionAndName.get(buildInstitutionAccountKey(normalizedInst, row.conta ?? ''))
       if (!rowAccountId) {
         throw new Error(`Conta não encontrada para ${row.instituicao}`)
       }
@@ -973,7 +1063,7 @@ export async function confirmAndImportNegociacaoForUser(
         price: new Prisma.Decimal(row.price.toString()),
         totalAmount: new Prisma.Decimal(row.total.toString()),
         date: row.date,
-        notes: `Importacao B3 - Negociacao (${row.instituicao})`,
+        notes: `Importacao B3 - Negociacao (${row.instituicao}${row.conta ? ` / ${row.conta}` : ''})`,
         _meta: row,
       })
     }
@@ -1441,7 +1531,7 @@ export async function confirmAndImportPosicaoForUser(
     }
 
     try {
-      await resolveImportAccountForInstitution(line.instituicao, clientId, prisma)
+      await resolveImportAccountForInstitution(line.instituicao, clientId, prisma, line.conta)
       await upsertAssetFromImport(line.ticker, line.name, line.category)
       upserted++
       const wasExisting = existingTickerSet.has(line.ticker)
@@ -1683,7 +1773,7 @@ export async function importPosicaoRows(userId: string, rows: PosicaoRow[]): Pro
         continue
       }
 
-      const resolution = await resolveImportAccountForInstitution(row.instituicao, clientId, prisma)
+      const resolution = await resolveImportAccountForInstitution(row.instituicao, clientId, prisma, row.conta)
       institutionAudit.set(resolution.institutionName, {
         accountName: resolution.accountName,
         institutionCreated: resolution.institutionCreated,

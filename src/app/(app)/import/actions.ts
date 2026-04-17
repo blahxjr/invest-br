@@ -18,6 +18,8 @@ import {
   type ConfirmImportResult,
   type ExistingAssetOption,
   type ImportPayload,
+  type InstitutionAccountMapping,
+  type InstitutionAccountSummary,
   type InstitutionPreview,
   type MissingClass,
   type MovimentacaoReviewLine,
@@ -40,6 +42,7 @@ export type SerializableParsedRow = {
   ticker: string
   mercado: string
   instituicao: string
+  conta?: string
   quantity: number
   price: number
   total: number
@@ -99,6 +102,8 @@ export type AnalyzeNegociacaoResponse = {
   availableClasses: SerializableAssetClassOption[]
   existingAssets: SerializableAssetOption[]
   institutionPreviews: InstitutionPreview[]
+  institutionAccountMappings: InstitutionAccountMapping[]
+  institutionAccountSummary: InstitutionAccountSummary
   summary: {
     totalRows: number
     readyCount: number
