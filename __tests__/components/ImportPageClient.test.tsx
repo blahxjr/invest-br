@@ -354,6 +354,69 @@ describe('ImportPageClient wizard', () => {
     expect(accountInput.value).toBe('Conta A')
   })
 
+  it('infere conta automaticamente pelo padrão do próprio arquivo em instituição com múltiplas contas', async () => {
+    const response = buildAnalyzeResponse()
+    response.ready = [
+      {
+        ...response.ready[0],
+        ticker: 'ABCD11',
+        conta: 'Conta A',
+      },
+    ]
+    response.unresolvedAssets = [
+      {
+        ticker: 'EFGH11',
+        suggestedName: 'EFGH11 - FII',
+        inferredClass: 'FII',
+        inferredCategory: 'FII',
+        rows: [
+          {
+            date: '2026-04-13T00:00:00.000Z',
+            type: 'BUY',
+            ticker: 'EFGH11',
+            mercado: 'Mercado a Vista',
+            instituicao: 'BTG',
+            quantity: 1,
+            price: 99,
+            total: 99,
+            referenceId: 'y',
+          },
+        ],
+      },
+    ]
+    response.institutionAccountMappings = [
+      {
+        normalizedInstitutionName: 'BTG',
+        displayInstitutionName: 'Btg',
+        rowCount: 2,
+        pendingRowReferenceIds: ['ready-1', 'y'],
+        rowsWithExplicitAccountCount: 1,
+        rowsWithoutAccountCount: 1,
+        existingAccounts: [{ name: 'Conta A' }, { name: 'Conta B' }],
+        autoFillStrategy: 'MULTIPLE_ACCOUNTS',
+      },
+    ]
+    response.institutionAccountSummary = {
+      institutionsWithAutoFill: 0,
+      institutionsRequiringSelection: 1,
+      totalRowsPendingAccountSelection: 1,
+    }
+
+    actionsMock.analyzeNegociacaoFile.mockResolvedValueOnce(response)
+
+    render(<ImportPageClient />)
+    await submitAnalyze()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Avançar →' })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Avançar →' }))
+
+    const accountInputs = screen.getAllByDisplayValue('Conta A')
+    expect(accountInputs.length).toBeGreaterThanOrEqual(2)
+  })
+
   it('abre confirmacao e executa limpeza da base de importacao', async () => {
     render(<ImportPageClient />)
 

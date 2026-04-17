@@ -221,13 +221,75 @@ function applyAccountToNegociacaoResponse(
 }
 
 function buildInitialNegociacaoAnalysis(response: AnalyzeNegociacaoResponse): AnalyzeNegociacaoResponse {
-  return response.institutionAccountMappings.reduce((current, mapping) => {
+  const byFilePattern = response.institutionAccountMappings.reduce((current, mapping) => {
+    const currentRows = [
+      ...current.ready.filter((row) => row.instituicao === mapping.normalizedInstitutionName),
+      ...current.unresolvedAssets.flatMap((asset) =>
+        asset.rows.filter((row) => row.instituicao === mapping.normalizedInstitutionName),
+      ),
+    ]
+
+    const tickerAccountCandidates = new Map<string, Set<string>>()
+    const institutionAccountCandidates = new Set<string>()
+
+    for (const row of currentRows) {
+      const normalizedAccount = row.conta?.trim()
+      if (!normalizedAccount) continue
+
+      institutionAccountCandidates.add(normalizedAccount)
+      const tickerCandidates = tickerAccountCandidates.get(row.ticker) ?? new Set<string>()
+      tickerCandidates.add(normalizedAccount)
+      tickerAccountCandidates.set(row.ticker, tickerCandidates)
+    }
+
+    const hasSingleInstitutionCandidate = institutionAccountCandidates.size === 1
+    const singleInstitutionCandidate = hasSingleInstitutionCandidate
+      ? Array.from(institutionAccountCandidates)[0]
+      : undefined
+
+    return {
+      ...current,
+      ready: current.ready.map((row) => {
+        if (row.instituicao !== mapping.normalizedInstitutionName || row.conta?.trim()) return row
+
+        const tickerCandidates = tickerAccountCandidates.get(row.ticker)
+        if (tickerCandidates && tickerCandidates.size === 1) {
+          return { ...row, conta: Array.from(tickerCandidates)[0] }
+        }
+
+        if (singleInstitutionCandidate) {
+          return { ...row, conta: singleInstitutionCandidate }
+        }
+
+        return row
+      }),
+      unresolvedAssets: current.unresolvedAssets.map((asset) => ({
+        ...asset,
+        rows: asset.rows.map((row) => {
+          if (row.instituicao !== mapping.normalizedInstitutionName || row.conta?.trim()) return row
+
+          const tickerCandidates = tickerAccountCandidates.get(row.ticker)
+          if (tickerCandidates && tickerCandidates.size === 1) {
+            return { ...row, conta: Array.from(tickerCandidates)[0] }
+          }
+
+          if (singleInstitutionCandidate) {
+            return { ...row, conta: singleInstitutionCandidate }
+          }
+
+          return row
+        }),
+      })),
+    }
+  }, response)
+
+  return byFilePattern.institutionAccountMappings.reduce((current, mapping) => {
     if (mapping.autoFillStrategy !== 'SINGLE_ACCOUNT' || !mapping.suggestedAccountName) {
       return current
     }
 
     return applyAccountToNegociacaoResponse(current, mapping.normalizedInstitutionName, mapping.suggestedAccountName, true)
-  }, response)
+  }, byFilePattern)
 }
 
 function NegociacaoWizardCard() {
