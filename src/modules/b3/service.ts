@@ -1,4 +1,4 @@
-import { AccountType, AssetCategory, InstitutionType, Prisma } from '@prisma/client'
+import { AccountType, AssetCategory, InstitutionType, Prisma, TransactionType } from '@prisma/client'
 import { createHash } from 'node:crypto'
 import { prisma } from '@/lib/prisma'
 import * as positionsService from '@/modules/positions/service'
@@ -144,22 +144,30 @@ export type MovimentacaoReviewLine = {
   }
   normalized: {
     date: Date | null
-    type: 'BUY' | 'DIVIDEND' | null
+    type: TransactionType | null
     ticker: string
     instituicao: string
     quantity: number
     price: number | null
     total: number | null
     referenceId: string
+    sourceMovementType: string
+    isIncoming: boolean | null
+    isTaxExempt: boolean
+    subscriptionDeadline: Date | null
   }
   date: Date
-  type: 'BUY' | 'DIVIDEND'
+  type: TransactionType | null
   ticker: string
   instituicao: string
   conta: string
   quantity: number
   price: number | null
   total: number | null
+  sourceMovementType: string
+  isIncoming: boolean
+  isTaxExempt: boolean
+  subscriptionDeadline: Date | null
   issues: string[]
 }
 
@@ -438,11 +446,12 @@ function buildNegociacaoIdempotencyKey(row: ParsedRow): string {
 
 function buildMovimentacaoIdempotencyKey(row: {
   date: Date
-  type: 'BUY' | 'DIVIDEND'
+  type: TransactionType
   ticker: string
   instituicao: string
   quantity: number
   total: number | null
+  sourceMovementType: string
 }): string {
   const raw = [
     row.ticker,
@@ -451,23 +460,44 @@ function buildMovimentacaoIdempotencyKey(row: {
     row.quantity.toString(),
     (row.total ?? 0).toString(),
     row.instituicao,
+    row.sourceMovementType,
   ].join('|')
 
   const digest = createHash('sha256').update(raw).digest('hex')
   return `b3-movimentacao-${digest}`
 }
 
+const MOVIMENTACAO_CASHLESS_TYPES = new Set<string>([
+  'CUSTODY_TRANSFER',
+  'SUBSCRIPTION_RIGHT',
+  'SUBSCRIPTION_EXPIRED',
+  'RIGHTS_TRANSFER',
+  'RIGHTS_TRANSFER_PENDING',
+  'CORPORATE_UPDATE',
+  'SPLIT',
+  'BONUS_SHARES',
+])
+
+const MOVIMENTACAO_OPTIONAL_QUANTITY_TYPES = new Set<string>([
+  'DIVIDEND',
+  'INCOME',
+])
+
 function validateMovimentacaoLine(line: {
+  type: TransactionType | null
   ticker: string
   instituicao: string
   quantity: number
   total: number | null
+  sourceMovementType?: string
 }): string[] {
   const issues: string[] = []
   if (!line.ticker.trim()) issues.push('ticker_ausente')
   if (!line.instituicao.trim()) issues.push('instituicao_ausente')
-  if (line.quantity <= 0) issues.push('quantidade_invalida')
-  if ((line.total ?? 0) <= 0) issues.push('valor_total_invalido')
+  if (!line.type) issues.push('tipo_transacao_ausente')
+  if (line.type && !MOVIMENTACAO_OPTIONAL_QUANTITY_TYPES.has(line.type) && line.quantity <= 0) issues.push('quantidade_invalida')
+  if (line.type && !MOVIMENTACAO_CASHLESS_TYPES.has(line.type) && (line.total ?? 0) <= 0) issues.push('valor_total_invalido')
+  if (!line.sourceMovementType?.trim()) issues.push('movimentacao_origem_ausente')
   return issues
 }
 
@@ -1263,17 +1293,18 @@ export async function analyzeMovimentacaoRows(
 
   const lines: MovimentacaoReviewLine[] = parsedLines.map((line, index) => {
     const normalizedCandidate = {
+      type: line.normalized.type,
       ticker: line.normalized.ticker,
       instituicao: line.normalized.instituicao,
       quantity: line.normalized.quantity,
       total: line.normalized.total,
+      sourceMovementType: line.normalized.sourceMovementType,
     }
     const issues = line.status === 'OK'
       ? validateMovimentacaoLine(normalizedCandidate)
       : [line.reason, ...validateMovimentacaoLine(normalizedCandidate)]
 
     const normalizedDate = line.normalized.date ?? parsePtBrDate(line.raw.data)
-    const normalizedType = line.normalized.type ?? (line.raw.movimentacao.toLowerCase().includes('transfer') ? 'BUY' : 'DIVIDEND')
 
     return {
       id: `mov-${index + 1}`,
@@ -1286,13 +1317,17 @@ export async function analyzeMovimentacaoRows(
       original: line.raw,
       normalized: line.normalized,
       date: normalizedDate,
-      type: normalizedType,
+      type: line.normalized.type,
       ticker: line.normalized.ticker,
       instituicao: line.normalized.instituicao,
       conta: '',
       quantity: line.normalized.quantity,
       price: line.normalized.price,
       total: line.normalized.total,
+      sourceMovementType: line.normalized.sourceMovementType,
+      isIncoming: line.normalized.isIncoming ?? false,
+      isTaxExempt: line.normalized.isTaxExempt,
+      subscriptionDeadline: line.normalized.subscriptionDeadline,
       issues,
     }
   })
@@ -1416,6 +1451,13 @@ export async function confirmAndImportMovimentacaoForUser(
     }
 
     try {
+      if (!line.type) {
+        skipped++
+        errors.push(`Movimentacao linha ${line.lineNumber}: tipo_transacao_ausente`)
+        lineAudit.push({ id: line.id, action: 'SKIP_INVALID', issues: ['tipo_transacao_ausente'], status: line.status, reason: line.reason })
+        continue
+      }
+
       const resolution = await resolveImportAccountForInstitution(line.instituicao, clientId, prisma, line.conta)
       const category = inferCategoryFromTickerAndMarket(line.ticker)
       const assetId = await upsertAssetFromImport(line.ticker, line.ticker, category)
@@ -1424,11 +1466,12 @@ export async function confirmAndImportMovimentacaoForUser(
         ? line.referenceId
         : buildMovimentacaoIdempotencyKey({
             date: ensureDate(line.date),
-            type: line.type,
+          type: line.type,
             ticker: line.ticker,
             instituicao: line.instituicao,
             quantity: line.quantity,
             total: line.total,
+            sourceMovementType: line.sourceMovementType,
           })
 
       const tx = await createTransaction({
@@ -1440,6 +1483,12 @@ export async function confirmAndImportMovimentacaoForUser(
         price: line.price ?? undefined,
         totalAmount: line.total ?? 0,
         date: ensureDate(line.date),
+        sourceMovementType: line.sourceMovementType,
+        isTaxExempt: line.isTaxExempt,
+        subscriptionDeadline: line.subscriptionDeadline ?? undefined,
+        isIncoming: line.isIncoming,
+        ledgerMovementType: line.sourceMovementType,
+        ledgerDescription: `Importacao B3 - ${line.sourceMovementType} (${line.instituicao}${line.conta ? ` / ${line.conta}` : ''})`,
         notes: `Importacao B3 - Movimentacao (${line.instituicao}${line.conta ? ` / ${line.conta}` : ''})`,
       })
 
@@ -1777,11 +1826,19 @@ export async function importMovimentacaoRows(
       const category = inferCategoryFromTickerAndMarket(row.ticker)
       const assetId = await upsertAssetFromImport(row.ticker, row.ticker, category)
       const totalAmount = row.total ?? 0
+      const issues = validateMovimentacaoLine({
+        type: row.type,
+        ticker: row.ticker,
+        instituicao: row.instituicao,
+        quantity: row.quantity,
+        total: row.total,
+        sourceMovementType: row.sourceMovementType,
+      })
 
-      if (totalAmount <= 0) {
+      if (issues.length > 0) {
         runtimeReviewRows.push({
           referenceId: row.referenceId,
-          reason: 'valor_total_invalido',
+          reason: issues.join(','),
           instituicao: row.instituicao,
         })
         skipped++
@@ -1797,6 +1854,12 @@ export async function importMovimentacaoRows(
         price: row.price ?? undefined,
         totalAmount,
         date: row.date,
+        sourceMovementType: row.sourceMovementType,
+        isTaxExempt: row.isTaxExempt,
+        subscriptionDeadline: row.subscriptionDeadline ?? undefined,
+        isIncoming: row.isIncoming,
+        ledgerMovementType: row.sourceMovementType,
+        ledgerDescription: `Importacao B3 - ${row.sourceMovementType} (${row.instituicao})`,
         notes: `Importacao B3 - Movimentacao (${row.instituicao})`,
       })
 

@@ -126,7 +126,8 @@ model Account {
   portfolio      Portfolio?     @relation(fields: [portfolioId], references: [id])
   institutionId  String
   institution    Institution    @relation(fields: [institutionId], references: [id])
-  transactions   Transaction[]
+  transactions   Transaction[]  @relation("PrimaryAccountTransactions")
+  originTransactions Transaction[] @relation("OriginAccountTransactions")
   ledgerEntries  LedgerEntry[]
   incomeEvents   IncomeEvent[]
   rentalReceipts RentalReceipt[]
@@ -191,6 +192,7 @@ model Asset {
   assetClass         AssetClass         @relation(fields: [assetClassId], references: [id])
   transactions       Transaction[]
   incomeEvents       IncomeEvent[]
+  subscriptionRights SubscriptionRight[]
   createdAt          DateTime           @default(now())
 }
 
@@ -267,6 +269,43 @@ enum TransactionType {
   DIVIDEND
   INCOME
   RENT
+  CUSTODY_TRANSFER
+  SUBSCRIPTION_RIGHT
+  SUBSCRIPTION_EXPIRED
+  RIGHTS_TRANSFER
+  RIGHTS_TRANSFER_PENDING
+  CORPORATE_UPDATE
+  MATURITY
+  SPLIT
+  BONUS_SHARES
+  FRACTIONAL_DEBIT
+  FRACTIONAL_AUCTION
+}
+
+enum SubscriptionStatus {
+  PENDING
+  EXERCISED
+  EXPIRED
+  TRANSFERRED
+}
+
+enum LedgerAccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+model LedgerAccount {
+  id          String            @id @default(cuid())
+  name        String
+  code        String            @unique
+  type        LedgerAccountType
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  ledgerEntries LedgerEntry[]
 }
 
 model Transaction {
@@ -274,18 +313,26 @@ model Transaction {
   referenceId  String          @unique // chave de idempotência
   type         TransactionType
   accountId    String
-  account      Account         @relation(fields: [accountId], references: [id])
+  account      Account         @relation("PrimaryAccountTransactions", fields: [accountId], references: [id])
+  originAccountId String?
+  originAccount Account?       @relation("OriginAccountTransactions", fields: [originAccountId], references: [id])
   assetId      String?
   asset        Asset?          @relation(fields: [assetId], references: [id])
   quantity     Decimal?        @db.Decimal(18, 8)
   price        Decimal?        @db.Decimal(18, 8)
   totalAmount  Decimal         @db.Decimal(18, 2)
   date         DateTime
+  sourceMovementType String?
+  isTaxExempt  Boolean         @default(false)
+  subscriptionDeadline DateTime?
   notes        String?
   ledgerEntries LedgerEntry[]
   incomeEvents  IncomeEvent[]
+  subscriptionRights SubscriptionRight[]
   createdAt    DateTime        @default(now())
   deletedAt    DateTime?       // soft delete
+
+  @@index([originAccountId])
 }
 
 model LedgerEntry {
@@ -294,10 +341,41 @@ model LedgerEntry {
   transaction   Transaction @relation(fields: [transactionId], references: [id])
   accountId     String
   account       Account     @relation(fields: [accountId], references: [id])
+  ledgerAccountId String?
+  ledgerAccount   LedgerAccount? @relation(fields: [ledgerAccountId], references: [id])
   debit         Decimal?    @db.Decimal(18, 2)
   credit        Decimal?    @db.Decimal(18, 2)
+  movementType  String?
+  description   String?
+  isIncoming    Boolean     @default(true)
   balanceAfter  Decimal     @db.Decimal(18, 2)
   createdAt     DateTime    @default(now())
+
+  @@index([ledgerAccountId])
+}
+
+model SubscriptionRight {
+  id                String             @id @default(cuid())
+  transactionId     String
+  transaction       Transaction        @relation(fields: [transactionId], references: [id])
+
+  assetId           String
+  asset             Asset              @relation(fields: [assetId], references: [id])
+
+  quantity          Decimal            @db.Decimal(18, 8)
+  subscriptionPrice Decimal?           @db.Decimal(18, 8)
+
+  deadline          DateTime?
+  status            SubscriptionStatus @default(PENDING)
+
+  exercisedQty      Decimal?           @db.Decimal(18, 8)
+  expirationTxId    String?
+
+  createdAt         DateTime           @default(now())
+
+  @@index([transactionId])
+  @@index([assetId])
+  @@index([status])
 }
 
 // ─── Proventos e aluguéis ────────────────────────────────────────────────────

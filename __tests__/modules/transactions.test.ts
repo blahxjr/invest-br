@@ -6,6 +6,7 @@ import {
   getTransactionsByAccount,
   getAccountBalance,
   getTransactionByReference,
+  getAccountStatement,
 } from '../../src/modules/transactions/service'
 import { safeDeleteMany, uniqueName, uniqueSuffix, uniqueTicker } from '../helpers/fixtures'
 
@@ -93,7 +94,7 @@ afterAll(async () => {
 // ── Testes ───────────────────────────────────────────────────────────────────
 
 describe('createTransaction() — depósito inicial', () => {
-  it('cria depósito de R$ 10.000 e gera ledger entry com crédito', async () => {
+  it('cria depósito de R$ 10.000 e gera partidas dobradas', async () => {
     const tx = await createTransaction({
       referenceId: `deposito-inicial-${accountId}`,
       type: 'DEPOSIT',
@@ -106,10 +107,11 @@ describe('createTransaction() — depósito inicial', () => {
     expect(tx.idempotent).toBe(false)
     expect(tx.type).toBe('DEPOSIT')
     expect(tx.totalAmount).toEqual(new Decimal('10000'))
-    expect(tx.ledgerEntries).toHaveLength(1)
-    expect(tx.ledgerEntries[0].credit).toEqual(new Decimal('10000'))
-    expect(tx.ledgerEntries[0].debit).toBeNull()
-    expect(tx.ledgerEntries[0].balanceAfter).toEqual(new Decimal('10000'))
+    expect(tx.ledgerEntries).toHaveLength(2)
+    const debitTotal = tx.ledgerEntries.reduce((acc, e) => acc.plus(e.debit ?? 0), new Decimal(0))
+    const creditTotal = tx.ledgerEntries.reduce((acc, e) => acc.plus(e.credit ?? 0), new Decimal(0))
+    expect(debitTotal).toEqual(new Decimal('10000'))
+    expect(creditTotal).toEqual(new Decimal('10000'))
   })
 })
 
@@ -131,10 +133,11 @@ describe('createTransaction() — compra PETR4', () => {
     expect(tx.quantity).toEqual(new Decimal('100'))
     expect(tx.price).toEqual(new Decimal('35.5'))
     expect(tx.totalAmount).toEqual(new Decimal('3550'))
-    expect(tx.ledgerEntries[0].debit).toEqual(new Decimal('3550'))
-    expect(tx.ledgerEntries[0].credit).toBeNull()
-    // Saldo: 10000 - 3550 = 6450
-    expect(tx.ledgerEntries[0].balanceAfter).toEqual(new Decimal('6450'))
+    expect(tx.ledgerEntries).toHaveLength(2)
+    const debitTotal = tx.ledgerEntries.reduce((acc, e) => acc.plus(e.debit ?? 0), new Decimal(0))
+    const creditTotal = tx.ledgerEntries.reduce((acc, e) => acc.plus(e.credit ?? 0), new Decimal(0))
+    expect(debitTotal).toEqual(new Decimal('3550'))
+    expect(creditTotal).toEqual(new Decimal('3550'))
   })
 })
 
@@ -152,9 +155,11 @@ describe('createTransaction() — venda parcial PETR4', () => {
     })
 
     expect(tx.type).toBe('SELL')
-    expect(tx.ledgerEntries[0].credit).toEqual(new Decimal('1900'))
-    // Saldo: 6450 + 1900 = 8350
-    expect(tx.ledgerEntries[0].balanceAfter).toEqual(new Decimal('8350'))
+    expect(tx.ledgerEntries).toHaveLength(2)
+    const debitTotal = tx.ledgerEntries.reduce((acc, e) => acc.plus(e.debit ?? 0), new Decimal(0))
+    const creditTotal = tx.ledgerEntries.reduce((acc, e) => acc.plus(e.credit ?? 0), new Decimal(0))
+    expect(debitTotal).toEqual(new Decimal('1900'))
+    expect(creditTotal).toEqual(new Decimal('1900'))
   })
 })
 
@@ -172,10 +177,75 @@ describe('createTransaction() — dividendo PETR4', () => {
 
     expect(tx.type).toBe('DIVIDEND')
     expect(tx.assetId).toBe(petr4Id)
-    expect(tx.ledgerEntries[0].credit).toEqual(new Decimal('150'))
-    // Saldo: 8350 + 150 = 8500
-    expect(tx.ledgerEntries[0].balanceAfter).toEqual(new Decimal('8500'))
+    expect(tx.ledgerEntries).toHaveLength(2)
+    const debitTotal = tx.ledgerEntries.reduce((acc, e) => acc.plus(e.debit ?? 0), new Decimal(0))
+    const creditTotal = tx.ledgerEntries.reduce((acc, e) => acc.plus(e.credit ?? 0), new Decimal(0))
+    expect(debitTotal).toEqual(new Decimal('150'))
+    expect(creditTotal).toEqual(new Decimal('150'))
     expect(tx.idempotent).toBe(false)
+  })
+})
+
+describe('createTransaction() — evento sem caixa', () => {
+  it('registra subscricao sem gerar lancamento financeiro', async () => {
+    const beforeBalance = await getAccountBalance(accountId)
+
+    const tx = await createTransaction({
+      referenceId: `subscricao-direito-001-${accountId}`,
+      type: 'SUBSCRIPTION_RIGHT',
+      accountId,
+      assetId: petr4Id,
+      quantity: 20,
+      totalAmount: 0,
+      date: new Date('2026-02-15'),
+      sourceMovementType: 'Direitos de Subscrição',
+      isIncoming: false,
+      ledgerMovementType: 'Direitos de Subscrição',
+      ledgerDescription: 'Credito de direito de subscricao',
+    })
+
+    const afterBalance = await getAccountBalance(accountId)
+
+    expect(tx.type).toBe('SUBSCRIPTION_RIGHT')
+    expect(tx.sourceMovementType).toBe('Direitos de Subscrição')
+    expect(tx.ledgerEntries).toHaveLength(0)
+    expect(afterBalance).toEqual(beforeBalance)
+  })
+})
+
+describe('createTransaction() — renda fixa', () => {
+  it('registra vencimento de renda fixa em partidas dobradas', async () => {
+    const tx = await createTransaction({
+      referenceId: `vencimento-rf-001-${accountId}`,
+      type: 'MATURITY',
+      accountId,
+      totalAmount: 500,
+      date: new Date('2026-02-20'),
+      notes: 'Vencimento CDB',
+    })
+
+    expect(tx.ledgerEntries).toHaveLength(2)
+    const debitTotal = tx.ledgerEntries.reduce((acc, e) => acc.plus(e.debit ?? 0), new Decimal(0))
+    const creditTotal = tx.ledgerEntries.reduce((acc, e) => acc.plus(e.credit ?? 0), new Decimal(0))
+    expect(debitTotal).toEqual(new Decimal('500'))
+    expect(creditTotal).toEqual(new Decimal('500'))
+  })
+})
+
+describe('createTransaction() — transferencia sem financeiro', () => {
+  it('nao gera ledger para CUSTODY_TRANSFER', async () => {
+    const tx = await createTransaction({
+      referenceId: `custody-transfer-001-${accountId}`,
+      type: 'CUSTODY_TRANSFER',
+      accountId,
+      assetId: petr4Id,
+      quantity: 10,
+      totalAmount: 0,
+      date: new Date('2026-02-22'),
+      notes: 'Transferencia de custodia',
+    })
+
+    expect(tx.ledgerEntries).toHaveLength(0)
   })
 })
 
@@ -193,27 +263,39 @@ describe('Idempotência', () => {
     expect(duplicate.idempotent).toBe(true)
     expect(duplicate.type).toBe('DEPOSIT')
 
-    // Deve haver somente 1 LedgerEntry para o depósito (sem duplicata)
+    // Deve haver somente 2 LedgerEntries para o depósito (sem duplicata)
     const entries = await prisma.ledgerEntry.findMany({
       where: { transaction: { referenceId: `deposito-inicial-${accountId}` } },
     })
-    expect(entries).toHaveLength(1)
+    expect(entries).toHaveLength(2)
   })
 })
 
 describe('getAccountBalance()', () => {
   it('retorna saldo correto consolidado de todas as entradas', async () => {
     const balance = await getAccountBalance(accountId)
-    // 10000 (depósito) - 3550 (compra) + 1900 (venda) + 150 (dividendo) = 8500
-    expect(balance).toEqual(new Decimal('8500'))
+    // 10000 (depósito) - 3550 (compra) + 1900 (venda) + 150 (dividendo) + 500 (vencimento) = 9000
+    // Evento sem caixa não altera saldo
+    expect(balance).toEqual(new Decimal('9000'))
   })
 })
 
 describe('getTransactionsByAccount()', () => {
-  it('retorna 4 transações da conta ordenadas por data desc', async () => {
+  it('retorna transações da conta ordenadas por data desc', async () => {
     const txs = await getTransactionsByAccount(accountId)
-    expect(txs.length).toBe(4)
+    expect(txs.length).toBe(7)
     // Primeira é a mais recente (venda em fev/26)
-    expect(txs[0].type).toBe('SELL')
+    expect(txs[0].type).toBe('CUSTODY_TRANSFER')
+  })
+})
+
+describe('getAccountStatement()', () => {
+  it('retorna extrato com saldo acumulado e sem linhas de eventos sem caixa', async () => {
+    const statement = await getAccountStatement(accountId)
+    expect(statement.length).toBeGreaterThan(0)
+    expect(statement.some((line) => line.description.includes('subscricao'))).toBe(false)
+
+    const lastLine = statement.at(-1)
+    expect(lastLine?.runningBalance).toEqual(new Decimal('9000'))
   })
 })

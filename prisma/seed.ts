@@ -201,6 +201,35 @@ async function main() {
 
   console.log(`✅ ${allInsightTypes.length} tipos de insight seedados`)
 
+  const ledgerAccounts = [
+    { code: 'ASSET_CASH', name: 'Caixa', type: 'ASSET' as const },
+    { code: 'ASSET_INVESTMENTS', name: 'Investimentos', type: 'ASSET' as const },
+    { code: 'INCOME_FII_RENTS', name: 'Rendimentos FII', type: 'INCOME' as const },
+    { code: 'INCOME_DIVIDENDS', name: 'Dividendos', type: 'INCOME' as const },
+    { code: 'INCOME_INTEREST', name: 'Juros', type: 'INCOME' as const },
+    { code: 'EQUITY_CAPITAL_CONTRIBUTIONS', name: 'Aportes de Capital', type: 'EQUITY' as const },
+    { code: 'EXPENSE_WITHDRAWALS', name: 'Saques', type: 'EXPENSE' as const },
+  ]
+
+  for (const account of ledgerAccounts) {
+    await prisma.ledgerAccount.upsert({
+      where: { code: account.code },
+      update: {
+        name: account.name,
+        type: account.type,
+        isActive: true,
+      },
+      create: {
+        code: account.code,
+        name: account.name,
+        type: account.type,
+        isActive: true,
+      },
+    })
+  }
+
+  console.log(`✅ ${ledgerAccounts.length} contas contábeis seedadas`)
+
   console.log('🎉 Seed concluído com sucesso!')
 }
 
