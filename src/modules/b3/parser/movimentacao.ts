@@ -1,3 +1,4 @@
+import type { TransactionType } from '@prisma/client'
 import type {
   MovimentacaoParsedLine,
   MovimentacaoReviewRow,
@@ -46,20 +47,152 @@ function normalizeMovement(value: string): string {
     .toLowerCase()
 }
 
-function getTypeFromMovement(movimentacao: string): {
-  type: 'BUY' | 'DIVIDEND' | null
+function inferIsFiiTicker(ticker: string): boolean {
+  return /^[A-Z]{4}11$/.test(ticker)
+}
+
+function inferFixedIncomeProfile(input: { ticker: string; produto: string }): {
+  isFixedIncome: boolean
+  isTaxExempt: boolean
+} {
+  const normalized = normalizeMovement(`${input.ticker} ${input.produto}`)
+  const exemptTokens = ['lca', 'lci', 'cri', 'cra']
+  const taxableTokens = ['cdb', 'debenture', 'debentur']
+  const fixedIncomeTokens = [...exemptTokens, ...taxableTokens]
+  const isFixedIncome = fixedIncomeTokens.some((token) => normalized.includes(token))
+  const isTaxExempt = exemptTokens.some((token) => normalized.includes(token))
+
+  return {
+    isFixedIncome,
+    isTaxExempt,
+  }
+}
+
+function normalizeEntryDirection(value: string): 'IN' | 'OUT' | 'UNKNOWN' {
+  const normalized = normalizeMovement(value)
+
+  if (normalized === 'credito' || normalized === 'entrada') return 'IN'
+  if (normalized === 'debito' || normalized === 'saida') return 'OUT'
+  return 'UNKNOWN'
+}
+
+export function classifyMovement(input: {
+  entradaSaida: string
+  movimentacao: string
+  ticker: string
+  produto: string
+}): {
+  type: TransactionType | null
   status: 'OK' | 'REVISAR' | 'IGNORAR'
   classification: 'LIQUIDACAO' | 'PROVENTO' | 'EVENTO_CORPORATIVO' | 'IGNORAR' | 'REVISAR'
   reason: string
+  isIncoming: boolean | null
+  isTaxExempt: boolean
 } {
-  const normalized = normalizeMovement(movimentacao)
+  const normalized = normalizeMovement(input.movimentacao)
+  const direction = normalizeEntryDirection(input.entradaSaida)
+  const isFii = inferIsFiiTicker(input.ticker)
+  const fixedIncomeProfile = inferFixedIncomeProfile({
+    ticker: input.ticker,
+    produto: input.produto,
+  })
 
-  if (normalized === 'transferencia - liquidacao') {
+  if (normalized === 'compra / venda' || normalized === 'compra/venda' || normalized === 'compra venda') {
+    if (!fixedIncomeProfile.isFixedIncome) {
+      return {
+        type: null,
+        status: 'REVISAR',
+        classification: 'REVISAR',
+        reason: 'compra_venda_sem_contexto_renda_fixa',
+        isIncoming: null,
+        isTaxExempt: false,
+      }
+    }
+
+    if (direction === 'OUT') {
+      return {
+        type: 'BUY',
+        status: 'OK',
+        classification: 'LIQUIDACAO',
+        reason: 'compra_renda_fixa',
+        isIncoming: false,
+        isTaxExempt: fixedIncomeProfile.isTaxExempt,
+      }
+    }
+
+    if (direction === 'IN') {
+      return {
+        type: 'MATURITY',
+        status: 'OK',
+        classification: 'LIQUIDACAO',
+        reason: 'resgate_renda_fixa_compra_venda',
+        isIncoming: true,
+        isTaxExempt: fixedIncomeProfile.isTaxExempt,
+      }
+    }
+
+    return {
+      type: null,
+      status: 'REVISAR',
+      classification: 'REVISAR',
+      reason: 'direcao_compra_venda_renda_fixa_ambigua',
+      isIncoming: null,
+      isTaxExempt: fixedIncomeProfile.isTaxExempt,
+    }
+  }
+
+  if (normalized === 'compra' || normalized === 'aplicacao') {
+    if (!fixedIncomeProfile.isFixedIncome) {
+      return {
+        type: null,
+        status: 'REVISAR',
+        classification: 'REVISAR',
+        reason: 'compra_sem_contexto_renda_fixa',
+        isIncoming: null,
+        isTaxExempt: false,
+      }
+    }
+
     return {
       type: 'BUY',
       status: 'OK',
       classification: 'LIQUIDACAO',
-      reason: 'liquidacao_elegivel',
+      reason: normalized === 'aplicacao' ? 'aplicacao_renda_fixa' : 'compra_renda_fixa',
+      isIncoming: false,
+      isTaxExempt: fixedIncomeProfile.isTaxExempt,
+    }
+  }
+
+  if (normalized === 'transferencia - liquidacao') {
+    if (direction === 'OUT') {
+      return {
+        type: 'BUY',
+        status: 'OK',
+        classification: 'LIQUIDACAO',
+        reason: 'liquidacao_compra',
+        isIncoming: false,
+        isTaxExempt: false,
+      }
+    }
+
+    if (direction === 'IN') {
+      return {
+        type: 'SELL',
+        status: 'OK',
+        classification: 'LIQUIDACAO',
+        reason: 'liquidacao_venda',
+        isIncoming: true,
+        isTaxExempt: false,
+      }
+    }
+
+    return {
+      type: null,
+      status: 'REVISAR',
+      classification: 'REVISAR',
+      reason: 'direcao_liquidacao_ambigua',
+      isIncoming: null,
+      isTaxExempt: false,
     }
   }
 
@@ -69,22 +202,162 @@ function getTypeFromMovement(movimentacao: string): {
       status: 'OK',
       classification: 'PROVENTO',
       reason: 'provento_elegivel',
+      isIncoming: true,
+      isTaxExempt: normalized === 'rendimento' && isFii,
     }
   }
 
-  if (
-    normalized.includes('subscricao')
-    || normalized.includes('cessao de direitos')
-    || normalized === 'atualizacao'
-    || normalized.includes('fracao')
-    || normalized.includes('resgate')
-    || normalized.includes('leilao')
-  ) {
+  if (normalized === 'juros') {
     return {
-      type: null,
-      status: 'REVISAR',
+      type: 'DIVIDEND',
+      status: 'OK',
+      classification: 'PROVENTO',
+      reason: 'juros_creditados',
+      isIncoming: true,
+      isTaxExempt: false,
+    }
+  }
+
+  if (normalized === 'transferencia') {
+    return {
+      type: 'CUSTODY_TRANSFER',
+      status: 'OK',
       classification: 'EVENTO_CORPORATIVO',
-      reason: 'evento_corporativo_requer_revisao',
+      reason: 'transferencia_generica',
+      isIncoming: direction === 'IN',
+      isTaxExempt: false,
+    }
+  }
+
+  if (normalized.includes('transferencia de custodia')) {
+    return {
+      type: 'CUSTODY_TRANSFER',
+      status: 'OK',
+      classification: 'EVENTO_CORPORATIVO',
+      reason: 'transferencia_custodia',
+      isIncoming: direction === 'IN',
+      isTaxExempt: false,
+    }
+  }
+
+  if (normalized.includes('subscricao nao exercida') || normalized.includes('subscricao não exercida') || normalized.includes('direito de subscricao expirado')) {
+    return {
+      type: 'SUBSCRIPTION_EXPIRED',
+      status: 'OK',
+      classification: 'EVENTO_CORPORATIVO',
+      reason: 'subscricao_expirada',
+      isIncoming: false,
+      isTaxExempt: false,
+    }
+  }
+
+  if (normalized.includes('direito de subscricao') || normalized.includes('direitos de subscricao') || normalized.includes('direitos de subscrição') || normalized.includes('subscricao')) {
+    return {
+      type: 'SUBSCRIPTION_RIGHT',
+      status: 'OK',
+      classification: 'EVENTO_CORPORATIVO',
+      reason: 'direito_subscricao_creditado',
+      isIncoming: false,
+      isTaxExempt: false,
+    }
+  }
+
+  if (normalized.includes('cessao de direitos') || normalized.includes('cessão de direitos')) {
+    return {
+      type: 'RIGHTS_TRANSFER',
+      status: 'OK',
+      classification: 'EVENTO_CORPORATIVO',
+      reason: 'cessao_direitos',
+      isIncoming: direction === 'IN',
+      isTaxExempt: false,
+    }
+  }
+
+  if (normalized === 'atualizacao') {
+    return {
+      type: 'CORPORATE_UPDATE',
+      status: 'OK',
+      classification: 'EVENTO_CORPORATIVO',
+      reason: 'atualizacao_cadastral_ativo',
+      isIncoming: false,
+      isTaxExempt: false,
+    }
+  }
+
+  if (normalized.includes('bonificacao')) {
+    return {
+      type: 'BONUS_SHARES',
+      status: 'OK',
+      classification: 'EVENTO_CORPORATIVO',
+      reason: 'bonificacao_em_ativos',
+      isIncoming: false,
+      isTaxExempt: false,
+    }
+  }
+
+  if (normalized === 'desdobro') {
+    return {
+      type: 'SPLIT',
+      status: 'OK',
+      classification: 'EVENTO_CORPORATIVO',
+      reason: 'desdobro',
+      isIncoming: false,
+      isTaxExempt: false,
+    }
+  }
+
+  if (normalized === 'fracao em ativos') {
+    return {
+      type: 'FRACTIONAL_DEBIT',
+      status: 'OK',
+      classification: 'EVENTO_CORPORATIVO',
+      reason: 'debito_fracionario',
+      isIncoming: false,
+      isTaxExempt: false,
+    }
+  }
+
+  if (normalized === 'leilao de fracao' || normalized === 'leilao') {
+    return {
+      type: 'FRACTIONAL_AUCTION',
+      status: 'OK',
+      classification: 'EVENTO_CORPORATIVO',
+      reason: 'leilao_fracionario',
+      isIncoming: true,
+      isTaxExempt: false,
+    }
+  }
+
+  if (normalized.includes('fracao') || normalized.includes('fração')) {
+    return {
+      type: direction === 'IN' ? 'FRACTIONAL_AUCTION' : 'FRACTIONAL_DEBIT',
+      status: 'OK',
+      classification: 'EVENTO_CORPORATIVO',
+      reason: direction === 'IN' ? 'credito_fracionario' : 'debito_fracionario',
+      isIncoming: direction === 'IN',
+      isTaxExempt: false,
+    }
+  }
+
+  if (normalized.includes('leilao') || normalized.includes('leilão')) {
+    return {
+      type: 'FRACTIONAL_AUCTION',
+      status: 'OK',
+      classification: 'EVENTO_CORPORATIVO',
+      reason: 'leilao_fracionario',
+      isIncoming: true,
+      isTaxExempt: false,
+    }
+  }
+
+  if (normalized.includes('resgate') || normalized.includes('vencimento')) {
+    return {
+      type: 'MATURITY',
+      status: 'OK',
+      classification: 'LIQUIDACAO',
+      reason: normalized === 'resgate antecipado' ? 'resgate_antecipado' : 'liquidacao_vencimento',
+      isIncoming: true,
+      isTaxExempt: fixedIncomeProfile.isTaxExempt,
     }
   }
 
@@ -93,6 +366,8 @@ function getTypeFromMovement(movimentacao: string): {
     status: 'REVISAR',
     classification: 'REVISAR',
     reason: 'tipo_movimentacao_desconhecido',
+    isIncoming: null,
+    isTaxExempt: false,
   }
 }
 
@@ -101,7 +376,7 @@ function extractTicker(produto: string): string {
   return (ticker ?? '').trim().toUpperCase()
 }
 
-function buildReferenceId(dateRaw: string, ticker: string, type: 'BUY' | 'DIVIDEND', total: number | null): string {
+function buildReferenceId(dateRaw: string, ticker: string, type: TransactionType, total: number | null): string {
   const dateKey = dateRaw.replaceAll('/', '-')
   const totalKey = total ?? 0
   return `movimentacao-${dateKey}-${ticker}-${type}-${totalKey}`
@@ -128,9 +403,14 @@ function parseMovimentacaoRowWithReason(row: RawRow): {
   normalized: MovimentacaoParsedLine['normalized']
 } {
   const raw = rawFromRow(row)
-  const parsedType = getTypeFromMovement(raw.movimentacao)
   const date = parseDate(raw.data)
   const ticker = extractTicker(raw.produto)
+  const parsedType = classifyMovement({
+    entradaSaida: raw.entradaSaida,
+    movimentacao: raw.movimentacao,
+    ticker,
+    produto: raw.produto,
+  })
   const quantity = parseNumberNullable(row[5]) ?? 0
   const price = parseNumberNullable(row[6])
   const total = parseNumberNullable(row[7])
@@ -142,7 +422,11 @@ function parseMovimentacaoRowWithReason(row: RawRow): {
     quantity,
     price,
     total,
-    referenceId: buildReferenceId(raw.data, ticker, parsedType.type ?? 'DIVIDEND', total),
+    referenceId: buildReferenceId(raw.data, ticker, parsedType.type ?? 'CORPORATE_UPDATE', total),
+    sourceMovementType: raw.movimentacao,
+    isIncoming: parsedType.isIncoming,
+    isTaxExempt: parsedType.isTaxExempt,
+    subscriptionDeadline: null,
   }
 
   if (!raw.data || !raw.movimentacao || !raw.produto) {
@@ -195,6 +479,10 @@ function parseMovimentacaoRowWithReason(row: RawRow): {
       price,
       total,
       referenceId: buildReferenceId(raw.data, ticker, parsedType.type, total),
+      sourceMovementType: raw.movimentacao,
+      isIncoming: parsedType.isIncoming ?? false,
+      isTaxExempt: parsedType.isTaxExempt,
+      subscriptionDeadline: null,
     },
     reason: parsedType.reason,
     status: parsedType.status,
@@ -236,6 +524,10 @@ export function parseMovimentacaoDetailed(rows: RawRow[]): ParseMovimentacaoResu
         price: line.normalized.price,
         total: line.normalized.total,
         referenceId: line.normalized.referenceId,
+        sourceMovementType: line.normalized.sourceMovementType,
+        isIncoming: line.normalized.isIncoming ?? false,
+        isTaxExempt: line.normalized.isTaxExempt,
+        subscriptionDeadline: line.normalized.subscriptionDeadline,
       })
       return
     }
