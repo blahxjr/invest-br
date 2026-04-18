@@ -339,10 +339,12 @@ export async function createTransaction(input: TransactionCreateInput): Promise<
   const isIncoming = resolveIncomingDirection(input)
   const shouldSkipLedger = shouldSkipFinancialLedger(input.type, totalAmount)
 
+  // ── Plano de contas (fora da transação — dado de referência, não transacional) ──
+  const ledgerAccounts = shouldSkipLedger ? null : await ensureLedgerChart(prisma)
+
   // ── Execução atômica: Transaction + LedgerEntry ─────────────────────────────
   const result = await prisma.$transaction(async (tx) => {
     const currentBalance = await getCurrentBalance(input.accountId, tx as typeof prisma)
-    const ledgerAccounts = await ensureLedgerChart(tx as typeof prisma)
 
     const transaction = await tx.transaction.create({
       data: {
@@ -375,7 +377,7 @@ export async function createTransaction(input: TransactionCreateInput): Promise<
         notes: input.ledgerDescription ?? transaction.notes,
         sourceMovementType: input.ledgerMovementType ?? transaction.sourceMovementType,
       },
-      ledgerAccounts,
+      ledgerAccounts: ledgerAccounts!,
       currentBalance,
       isIncoming,
     })
