@@ -57,6 +57,7 @@ afterAll(async () => {
     await safeDeleteMany(prisma.client, { id: createdClientId })
   }
 
+  await safeDeleteMany(prisma.portfolio, { userId })
   await safeDeleteMany(prisma.user, { id: userId })
   await prisma.$disconnect()
 })

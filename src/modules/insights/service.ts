@@ -73,20 +73,36 @@ export async function getInsightsForClient(
     })
   }
 
-  if (portfolios.length === 0) {
-    return []
+  const portfolioIds = portfolios.map((p) => p.id)
+
+  const accountWhere: Prisma.AccountWhereInput = {
+    clientId,
   }
 
-  const portfolioIds = portfolios.map((p) => p.id)
+  if (portfolioId) {
+    if (portfolioIds.length === 0) {
+      return []
+    }
+
+    accountWhere.portfolioId = {
+      in: portfolioIds,
+    }
+  } else if (portfolioIds.length > 0) {
+    accountWhere.OR = [
+      {
+        portfolioId: {
+          in: portfolioIds,
+        },
+      },
+      {
+        portfolioId: null,
+      },
+    ]
+  }
 
   // 3. Buscar todas as contas vinculadas
   const accounts = await prisma.account.findMany({
-    where: {
-      clientId: clientId,
-      portfolioId: {
-        in: portfolioIds,
-      },
-    },
+    where: accountWhere,
   })
 
   if (accounts.length === 0) {

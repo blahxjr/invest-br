@@ -481,6 +481,18 @@ function buildMovimentacaoIdempotencyKey(row: {
   return `b3-movimentacao-${digest}`
 }
 
+function scopeReferenceIdForUser(userId: string, referenceId: string): string {
+  const normalized = referenceId.trim()
+  if (!normalized) return normalized
+
+  const prefix = `usr:${userId}:`
+  if (normalized.startsWith(prefix)) {
+    return normalized
+  }
+
+  return `${prefix}${normalized}`
+}
+
 const MOVIMENTACAO_CASHLESS_TYPES = new Set<string>([
   'CUSTODY_TRANSFER',
   'SUBSCRIPTION_RIGHT',
@@ -597,6 +609,31 @@ export async function getOrCreateClientForUser(userId: string): Promise<string> 
 }
 
 /**
+ * Busca ou cria o portfolio padrão do usuário para vincular contas importadas.
+ */
+export async function getOrCreateDefaultPortfolioForUser(userId: string, tx: TxClient = prisma): Promise<string> {
+  const existing = await tx.portfolio.findFirst({
+    where: { userId },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true },
+  })
+
+  if (existing) {
+    return existing.id
+  }
+
+  const created = await tx.portfolio.create({
+    data: {
+      userId,
+      name: 'Minha Carteira',
+    },
+    select: { id: true },
+  })
+
+  return created.id
+}
+
+/**
  * Garante a existência de uma instituição pelo nome normalizado.
  */
 export async function upsertInstitution(name: string, tx: TxClient): Promise<string> {
@@ -626,13 +663,22 @@ export async function upsertAccountForInstitution(
   clientId: string,
   tx: TxClient,
   accountName?: string,
+  portfolioId?: string,
 ): Promise<string> {
   const normalizedAccountName = normalizeAccountName(accountName, institutionName)
   const existing = await tx.account.findFirst({
     where: { institutionId, clientId, name: normalizedAccountName },
-    select: { id: true },
+    select: { id: true, portfolioId: true },
   })
-  if (existing) return existing.id
+  if (existing) {
+    if (portfolioId && !existing.portfolioId) {
+      await tx.account.update({
+        where: { id: existing.id },
+        data: { portfolioId },
+      })
+    }
+    return existing.id
+  }
 
   const created = await tx.account.create({
     data: {
@@ -640,6 +686,7 @@ export async function upsertAccountForInstitution(
       type: AccountType.BROKERAGE,
       clientId,
       institutionId,
+      portfolioId: portfolioId ?? null,
     },
     select: { id: true },
   })
@@ -654,6 +701,7 @@ export async function resolveImportAccountForInstitution(
   clientId: string,
   tx: TxClient,
   accountName?: string,
+  portfolioId?: string,
 ): Promise<ImportAccountResolution> {
   const normalizedName = normalizeInstitutionName(institutionName)
   const normalizedAccountName = normalizeAccountName(accountName, normalizedName)
@@ -670,7 +718,14 @@ export async function resolveImportAccountForInstitution(
     select: { id: true, name: true },
   })
 
-  const accountId = await upsertAccountForInstitution(institutionId, normalizedName, clientId, tx, normalizedAccountName)
+  const accountId = await upsertAccountForInstitution(
+    institutionId,
+    normalizedName,
+    clientId,
+    tx,
+    normalizedAccountName,
+    portfolioId,
+  )
 
   const resolvedAccountName = existingAccount?.name || normalizedAccountName
 
@@ -939,6 +994,7 @@ export async function confirmAndImportNegociacaoForUser(
   payload: ImportPayload,
 ): Promise<ConfirmImportResult> {
   const clientId = await getOrCreateClientForUser(userId)
+  const portfolioId = await getOrCreateDefaultPortfolioForUser(userId)
   const normalizedReadyRows: ParsedRow[] = payload.readyRows.map((row) => ({
     ...row,
     date: ensureDate(row.date),
@@ -972,7 +1028,7 @@ export async function confirmAndImportNegociacaoForUser(
       const accountNames = Array.from(new Set(rowsForInstitution.map((row) => normalizeAccountName(row.conta, instName))))
 
       for (const accountName of accountNames) {
-        const resolution = await resolveImportAccountForInstitution(instName, clientId, tx, accountName)
+        const resolution = await resolveImportAccountForInstitution(instName, clientId, tx, accountName, portfolioId)
 
         if (resolution.institutionCreated) institutionsCreated++
         if (resolution.accountCreated) accountsCreated++
@@ -1119,7 +1175,7 @@ export async function confirmAndImportNegociacaoForUser(
         throw new Error(`Não foi possível resolver ativo para ticker ${row.ticker}`)
       }
 
-      const referenceId = buildNegociacaoIdempotencyKey(row)
+      const referenceId = scopeReferenceIdForUser(userId, buildNegociacaoIdempotencyKey(row))
       txByReferenceId.set(referenceId, {
         referenceId,
         type: row.type,
@@ -1463,6 +1519,7 @@ export async function confirmAndImportMovimentacaoForUser(
 ): Promise<ConfirmMovimentacaoResult> {
   console.log(`IMPORT_B3_MOVIMENTACAO: ${lines.length} linhas confirmadas`)
   const clientId = await getOrCreateClientForUser(userId)
+  const portfolioId = await getOrCreateDefaultPortfolioForUser(userId)
   let imported = 0
   let skipped = 0
   const errors: string[] = []
@@ -1492,12 +1549,18 @@ export async function confirmAndImportMovimentacaoForUser(
         continue
       }
 
-      const resolution = await resolveImportAccountForInstitution(line.instituicao, clientId, prisma, line.conta)
+      const resolution = await resolveImportAccountForInstitution(
+        line.instituicao,
+        clientId,
+        prisma,
+        line.conta,
+        portfolioId,
+      )
       const category = inferCategoryFromTickerAndMarket(line.ticker)
       const assetName = extractAssetNameFromProduto(line.original?.produto, line.ticker)
       const assetId = await upsertAssetFromImport(line.ticker, assetName, category)
 
-      const referenceId = line.referenceId?.trim()
+      const referenceIdBase = line.referenceId?.trim()
         ? line.referenceId
         : buildMovimentacaoIdempotencyKey({
             date: ensureDate(line.date),
@@ -1508,6 +1571,7 @@ export async function confirmAndImportMovimentacaoForUser(
             total: line.total,
             sourceMovementType: line.sourceMovementType,
           })
+      const referenceId = scopeReferenceIdForUser(userId, referenceIdBase)
 
       const tx = await createTransaction({
         referenceId,
@@ -1688,6 +1752,7 @@ export async function confirmAndImportPosicaoForUser(
   lines: PosicaoReviewLine[],
 ): Promise<ConfirmPosicaoResult> {
   const clientId = await getOrCreateClientForUser(userId)
+  const portfolioId = await getOrCreateDefaultPortfolioForUser(userId)
   let upserted = 0
   let skipped = 0
   const errors: string[] = []
@@ -1714,7 +1779,7 @@ export async function confirmAndImportPosicaoForUser(
     }
 
     try {
-      await resolveImportAccountForInstitution(line.instituicao, clientId, prisma, line.conta)
+      await resolveImportAccountForInstitution(line.instituicao, clientId, prisma, line.conta, portfolioId)
       await upsertAssetFromImport(line.ticker, line.name, line.category)
       upserted++
       const wasExisting = existingTickerSet.has(line.ticker)
@@ -1759,6 +1824,7 @@ export async function confirmAndImportPosicaoForUser(
  */
 export async function importNegociacaoRows(userId: string, rows: NegociacaoRow[]): Promise<ImportResult> {
   const clientId = await getOrCreateClientForUser(userId)
+  const portfolioId = await getOrCreateDefaultPortfolioForUser(userId)
   let imported = 0
   let skipped = 0
   const errors: string[] = []
@@ -1773,7 +1839,7 @@ export async function importNegociacaoRows(userId: string, rows: NegociacaoRow[]
         continue
       }
 
-      const resolution = await resolveImportAccountForInstitution(row.instituicao, clientId, prisma)
+      const resolution = await resolveImportAccountForInstitution(row.instituicao, clientId, prisma, undefined, portfolioId)
       institutionAudit.set(resolution.institutionName, {
         accountName: resolution.accountName,
         institutionCreated: resolution.institutionCreated,
@@ -1784,7 +1850,7 @@ export async function importNegociacaoRows(userId: string, rows: NegociacaoRow[]
       const assetId = await upsertAssetFromImport(row.ticker, row.ticker, category)
 
       const tx = await createTransaction({
-        referenceId: row.referenceId,
+        referenceId: scopeReferenceIdForUser(userId, row.referenceId),
         type: row.type,
         accountId: resolution.accountId,
         assetId,
@@ -1841,6 +1907,7 @@ export async function importMovimentacaoRows(
   parserReviewRows: MovimentacaoReviewRow[] = [],
 ): Promise<ImportResult> {
   const clientId = await getOrCreateClientForUser(userId)
+  const portfolioId = await getOrCreateDefaultPortfolioForUser(userId)
   let imported = 0
   let skipped = 0
   const errors: string[] = []
@@ -1855,7 +1922,7 @@ export async function importMovimentacaoRows(
         continue
       }
 
-      const resolution = await resolveImportAccountForInstitution(row.instituicao, clientId, prisma)
+      const resolution = await resolveImportAccountForInstitution(row.instituicao, clientId, prisma, undefined, portfolioId)
       institutionAudit.set(resolution.institutionName, {
         accountName: resolution.accountName,
         institutionCreated: resolution.institutionCreated,
@@ -1885,7 +1952,7 @@ export async function importMovimentacaoRows(
       }
 
       const tx = await createTransaction({
-        referenceId: row.referenceId,
+        referenceId: scopeReferenceIdForUser(userId, row.referenceId),
         type: row.type,
         accountId: resolution.accountId,
         assetId,
@@ -1956,6 +2023,7 @@ export async function importMovimentacaoRows(
  */
 export async function importPosicaoRows(userId: string, rows: PosicaoRow[]): Promise<ImportResult> {
   const clientId = await getOrCreateClientForUser(userId)
+  const portfolioId = await getOrCreateDefaultPortfolioForUser(userId)
   let upserted = 0
   let skipped = 0
   const errors: string[] = []
@@ -1970,7 +2038,7 @@ export async function importPosicaoRows(userId: string, rows: PosicaoRow[]): Pro
         continue
       }
 
-      const resolution = await resolveImportAccountForInstitution(row.instituicao, clientId, prisma, row.conta)
+      const resolution = await resolveImportAccountForInstitution(row.instituicao, clientId, prisma, row.conta, portfolioId)
       institutionAudit.set(resolution.institutionName, {
         accountName: resolution.accountName,
         institutionCreated: resolution.institutionCreated,

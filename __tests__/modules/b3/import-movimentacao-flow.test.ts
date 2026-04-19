@@ -66,6 +66,7 @@ afterAll(async () => {
     await safeDeleteMany(prisma.client, { id: createdClientId })
   }
 
+  await safeDeleteMany(prisma.portfolio, { userId })
   await safeDeleteMany(prisma.user, { id: userId })
   await prisma.$disconnect()
 })
@@ -96,6 +97,10 @@ function buildRow(input: {
     isTaxExempt: input.isTaxExempt ?? false,
     subscriptionDeadline: null,
   }
+}
+
+function scopedReferenceId(referenceId: string): string {
+  return `usr:${userId}:${referenceId}`
 }
 
 describe('importMovimentacaoRows', () => {
@@ -239,11 +244,11 @@ describe('importMovimentacaoRows', () => {
     expect(incomeResult.imported).toBe(1)
 
     const buyTx = await prisma.transaction.findUnique({
-      where: { referenceId: buyReferenceId },
+      where: { referenceId: scopedReferenceId(buyReferenceId) },
       include: { ledgerEntries: true },
     })
     const incomeTx = await prisma.transaction.findUnique({
-      where: { referenceId: incomeReferenceId },
+      where: { referenceId: scopedReferenceId(incomeReferenceId) },
       include: { ledgerEntries: true },
     })
 
@@ -304,7 +309,11 @@ describe('importMovimentacaoRows', () => {
     expect(result.imported).toBe(2)
 
     const transactions = await prisma.transaction.findMany({
-      where: { referenceId: { in: [transferReferenceId, subscriptionReferenceId] } },
+      where: {
+        referenceId: {
+          in: [scopedReferenceId(transferReferenceId), scopedReferenceId(subscriptionReferenceId)],
+        },
+      },
       include: { ledgerEntries: true },
       orderBy: { referenceId: 'asc' },
     })
@@ -336,7 +345,7 @@ describe('importMovimentacaoRows', () => {
     expect(result.imported).toBe(1)
 
     const tx = await prisma.transaction.findUnique({
-      where: { referenceId },
+      where: { referenceId: scopedReferenceId(referenceId) },
       include: { ledgerEntries: true },
     })
 

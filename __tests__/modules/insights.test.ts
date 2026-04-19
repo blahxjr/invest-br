@@ -196,6 +196,31 @@ describe('Módulo Insights', () => {
     expect(insights).toEqual([])
   })
 
+  it('Conta sem portfolio deve continuar gerando insights quando houver transações', async () => {
+    await prisma.account.update({
+      where: { id: accountId },
+      data: { portfolioId: null },
+    })
+
+    await prisma.transaction.create({
+      data: {
+        accountId,
+        assetId: assetId1,
+        type: 'BUY',
+        quantity: 100,
+        price: 100,
+        totalAmount: 100 * 100,
+        date: new Date(),
+        referenceId: `ref-sem-portfolio-${Date.now()}`,
+      },
+    })
+
+    const insights = await getInsightsForClient(clientId)
+    const concentracaoAtivo = insights.find((i) => i.type === InsightType.CONCENTRACAO_ATIVO)
+
+    expect(concentracaoAtivo).toBeDefined()
+  })
+
   it('Um ativo com > 25% deve detectar CONCENTRACAO_ATIVO', async () => {
     // Criar transações para ter um ativo com 28% do patrimônio
     // WEGE3: 100 ações × 100 = 10.000 (28% de 35.714)
