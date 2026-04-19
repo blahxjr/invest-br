@@ -5,7 +5,6 @@ import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeftRight, Plus, Pencil, Trash2 } from 'lucide-react'
 import Link from 'next/link'
-import type { TransactionType } from '@prisma/client'
 import { TransactionFilters, type TransactionFilter } from '@/components/TransactionFilters'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { EditModal } from '@/components/ui/EditModal'
@@ -46,7 +45,24 @@ type Props = {
   typeColors: Record<string, string>
 }
 
-const transactionTypesList: TransactionType[] = ['BUY', 'SELL', 'DEPOSIT', 'WITHDRAWAL', 'DIVIDEND', 'INCOME', 'RENT']
+type EditableTransactionType =
+  | 'BUY'
+  | 'SELL'
+  | 'DEPOSIT'
+  | 'WITHDRAWAL'
+  | 'DIVIDEND'
+  | 'INCOME'
+  | 'RENT'
+
+const transactionTypesList: EditableTransactionType[] = [
+  'BUY',
+  'SELL',
+  'DEPOSIT',
+  'WITHDRAWAL',
+  'DIVIDEND',
+  'INCOME',
+  'RENT',
+]
 
 function formatCurrency(value: string | null) {
   if (!value) return '—'
@@ -167,7 +183,7 @@ export function TransactionsPageClient({
     try {
       const result = await updateTransaction(editingTransaction.id, {
         date: new Date(editFormData.date),
-        type: editFormData.type as TransactionType,
+        type: editFormData.type as EditableTransactionType,
         quantity: editFormData.quantity ? parseFloat(editFormData.quantity) : undefined,
         price: editFormData.price ? parseFloat(editFormData.price) : undefined,
         notes: editFormData.notes || undefined,

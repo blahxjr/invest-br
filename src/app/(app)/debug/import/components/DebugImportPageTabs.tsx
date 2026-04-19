@@ -31,29 +31,36 @@ const EMPTY_SNAPSHOT: DebugResultsSnapshotResponse = {
 export function DebugImportPageTabs() {
   const [activeTab, setActiveTab] = useState<PageTab>('wizard')
   const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [logs, setLogs] = useState<DebugLogFile[]>([])
   const [snapshot, setSnapshot] = useState<DebugResultsSnapshotResponse>(EMPTY_SNAPSHOT)
+
+  async function loadData() {
+    setIsLoading(true)
+    setLoadError(null)
+
+    try {
+      const [logsResult, snapshotResult] = await Promise.all([
+        getDebugLogs(),
+        getDebugResultsSnapshot(),
+      ])
+
+      setLogs(logsResult)
+      setSnapshot(snapshotResult)
+    } catch {
+      setLoadError('Não foi possível carregar dados de depuração agora.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   useEffect(() => {
     let mounted = true
 
-    async function loadData() {
-      try {
-        const [logsResult, snapshotResult] = await Promise.all([
-          getDebugLogs(),
-          getDebugResultsSnapshot(),
-        ])
-
-        if (!mounted) return
-
-        setLogs(logsResult)
-        setSnapshot(snapshotResult)
-      } finally {
-        if (mounted) setIsLoading(false)
-      }
-    }
-
-    void loadData()
+    void (async () => {
+      await loadData()
+      if (!mounted) return
+    })()
 
     return () => {
       mounted = false
@@ -69,6 +76,41 @@ export function DebugImportPageTabs() {
     return (
       <Card>
         <CardContent className="py-6 text-sm text-gray-600">Carregando dados de depuração...</CardContent>
+      </Card>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <Card>
+        <CardContent className="space-y-3 py-6">
+          <p className="text-sm text-red-700">{loadError}</p>
+          <button
+            type="button"
+            onClick={() => {
+              void loadData()
+            }}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            Tentar novamente
+          </button>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const hasAnyData =
+    snapshot.auditLogs.length > 0 ||
+    snapshot.transactions.length > 0 ||
+    snapshot.ledger.length > 0 ||
+    logs.length > 0
+
+  if (!hasAnyData) {
+    return (
+      <Card>
+        <CardContent className="py-6 text-sm text-gray-600">
+          Nenhum dado de depuração disponível ainda. Execute uma análise no wizard para popular métricas, resultados e logs.
+        </CardContent>
       </Card>
     )
   }

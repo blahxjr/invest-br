@@ -114,7 +114,7 @@ export function ImportWizard() {
 
   return (
     <Tabs value={tab} onValueChange={setTab}>
-      <TabsList>
+      <TabsList className="h-auto w-full flex-wrap">
         <TabsTrigger value="wizard">Importar Planilhas</TabsTrigger>
         <TabsTrigger value="resultados">Resultados</TabsTrigger>
         <TabsTrigger value="logs">Logs .md</TabsTrigger>

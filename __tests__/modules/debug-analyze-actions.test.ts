@@ -18,7 +18,7 @@ const mockPrisma = vi.hoisted(() => ({
 }))
 const parserMock = vi.hoisted(() => ({
   parseNegociacao: vi.fn(),
-  parseMovimentacao: vi.fn(),
+  parseMovimentacaoDetailed: vi.fn(),
   parsePosicao: vi.fn(),
 }))
 const serviceMock = vi.hoisted(() => ({
@@ -45,7 +45,7 @@ vi.mock('@/lib/auth', () => ({ auth: mockAuth }))
 vi.mock('@/lib/prisma', () => ({ prisma: mockPrisma }))
 vi.mock('@/modules/b3/parser', () => ({
   parseNegociacao: parserMock.parseNegociacao,
-  parseMovimentacao: parserMock.parseMovimentacao,
+  parseMovimentacaoDetailed: parserMock.parseMovimentacaoDetailed,
   parsePosicao: parserMock.parsePosicao,
 }))
 vi.mock('@/modules/b3/service', () => ({
@@ -161,7 +161,7 @@ describe('analyzeImport', () => {
     vi.clearAllMocks()
     mockAuth.mockResolvedValue({ user: { id: 'user-1' } })
     parserMock.parseNegociacao.mockReturnValue([negociacaoRow()])
-    parserMock.parseMovimentacao.mockReturnValue({ readyRows: [movimentacaoRow()], reviewRows: [] })
+    parserMock.parseMovimentacaoDetailed.mockReturnValue({ readyRows: [movimentacaoRow()], reviewRows: [] })
     parserMock.parsePosicao.mockReturnValue([posicaoRow()])
     serviceMock.importNegociacaoRows.mockResolvedValue({ imported: 1, skipped: 0, errors: [] })
     serviceMock.importMovimentacaoRows.mockResolvedValue({ imported: 1, skipped: 0, errors: [] })

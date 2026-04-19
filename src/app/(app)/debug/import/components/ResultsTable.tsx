@@ -55,7 +55,7 @@ function GenericTable<TData>({
   emptyMessage,
 }: {
   data: TData[]
-  columns: Array<ColumnDef<TData, unknown>>
+  columns: Array<ColumnDef<TData, any>>
   emptyMessage: string
 }) {
   const table = useReactTable({
@@ -149,7 +149,7 @@ export function ResultsTable({ auditLogs, transactions, ledger }: ResultsTablePr
   const transactionColumn = createColumnHelper<DebugTransactionRow>()
   const ledgerColumn = createColumnHelper<DebugLedgerRow>()
 
-  const auditColumns = useMemo<ColumnDef<DebugAuditLogRow, unknown>[]>(
+  const auditColumns = useMemo(
     () => [
       auditColumn.accessor('id', { header: 'id' }),
       auditColumn.accessor('source', { header: 'source' }),
@@ -167,7 +167,7 @@ export function ResultsTable({ auditLogs, transactions, ledger }: ResultsTablePr
     [auditColumn],
   )
 
-  const transactionColumns = useMemo<ColumnDef<DebugTransactionRow, unknown>[]>(
+  const transactionColumns = useMemo(
     () => [
       transactionColumn.accessor('id', { header: 'id' }),
       transactionColumn.accessor('accountId', { header: 'accountId' }),
@@ -193,7 +193,7 @@ export function ResultsTable({ auditLogs, transactions, ledger }: ResultsTablePr
     [transactionColumn],
   )
 
-  const ledgerColumns = useMemo<ColumnDef<DebugLedgerRow, unknown>[]>(
+  const ledgerColumns = useMemo(
     () => [
       ledgerColumn.accessor('id', { header: 'id' }),
       ledgerColumn.accessor('accountId', { header: 'accountId' }),
@@ -255,6 +255,23 @@ export function ResultsTable({ auditLogs, transactions, ledger }: ResultsTablePr
       ]),
     )
     downloadCsv('debug-ledger.csv', csv)
+  }
+
+  const hasAnyRows = auditLogs.length > 0 || transactions.length > 0 || ledger.length > 0
+
+  if (!hasAnyRows) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Resultados Técnicos</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-gray-500">
+            Sem dados de AuditLog, Transactions ou Ledger para o período recente.
+          </p>
+        </CardContent>
+      </Card>
+    )
   }
 
   return (

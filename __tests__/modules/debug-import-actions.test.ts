@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mockAuth = vi.hoisted(() => vi.fn())
 const parserMock = vi.hoisted(() => ({
   parseNegociacao: vi.fn(),
-  parseMovimentacao: vi.fn(),
+  parseMovimentacaoDetailed: vi.fn(),
   parsePosicao: vi.fn(),
 }))
 const serviceMock = vi.hoisted(() => ({
@@ -16,7 +16,7 @@ const serviceMock = vi.hoisted(() => ({
 vi.mock('@/lib/auth', () => ({ auth: mockAuth }))
 vi.mock('@/modules/b3/parser', () => ({
   parseNegociacao: parserMock.parseNegociacao,
-  parseMovimentacao: parserMock.parseMovimentacao,
+  parseMovimentacaoDetailed: parserMock.parseMovimentacaoDetailed,
   parsePosicao: parserMock.parsePosicao,
 }))
 vi.mock('@/modules/b3/service', () => ({
@@ -65,7 +65,7 @@ describe('debug/import actions', () => {
       },
     ])
 
-    parserMock.parseMovimentacao.mockReturnValue({
+    parserMock.parseMovimentacaoDetailed.mockReturnValue({
       readyRows: [
         {
           date: new Date('2026-04-19T00:00:00.000Z'),

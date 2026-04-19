@@ -12,7 +12,7 @@ import {
   type ImportResult,
 } from '@/modules/b3/service'
 import {
-  parseMovimentacao,
+  parseMovimentacaoDetailed,
   parseNegociacao,
   parsePosicao,
   type RawSheet,
@@ -204,7 +204,7 @@ export async function importMovimentacaoDebug(formData: FormData): Promise<Debug
     const file = await getUploadedFile(formData)
     const workbook = workbookFromArrayBuffer(await file.arrayBuffer())
     const rows = sheetRows(workbook, 'Movimentação')
-    const parsedResult = parseMovimentacao(rows)
+    const parsedResult = parseMovimentacaoDetailed(rows)
     const result = await importMovimentacaoRows(session.user.id, parsedResult.readyRows, parsedResult.reviewRows)
 
     const preview: PreviewTable = {
@@ -553,7 +553,7 @@ export async function analyzeImport(
       }
     } else if (importType === 'movimentacao') {
       const rows = sheetRows(workbook, 'Movimentação')
-      const parsedResult = parseMovimentacao(rows)
+      const parsedResult = parseMovimentacaoDetailed(rows)
       parsedRows = parsedResult.readyRows.length
       result = await importMovimentacaoRows(userId, parsedResult.readyRows, parsedResult.reviewRows)
       preview = {
@@ -773,6 +773,7 @@ export async function getDebugResultsSnapshot(): Promise<DebugResultsSnapshotRes
   const [auditLogsRaw, transactionsRaw, ledgerRaw] = await Promise.all([
     prisma.auditLog.findMany({
       where: {
+        changedBy: userId,
         changedAt: { gte: oneHourAgo },
       },
       orderBy: { changedAt: 'desc' },

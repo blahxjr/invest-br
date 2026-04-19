@@ -135,7 +135,7 @@ export type SerializableMovimentacaoLine = Omit<MovimentacaoReviewLine, 'date' |
   }
 }
 
-export type AnalyzeMovimentacaoResponse = AnalyzeMovimentacaoResult & {
+export type AnalyzeMovimentacaoResponse = Omit<AnalyzeMovimentacaoResult, 'lines' | 'exportArtifacts'> & {
   lines: SerializableMovimentacaoLine[]
   exportArtifacts: {
     mainFile: SerializableMovimentacaoLine[]
@@ -318,6 +318,17 @@ export async function analyzeMovimentacaoFile(formData: FormData): Promise<Analy
   if (!session?.user?.id) {
     return {
       lines: [],
+      institutionAccountMappings: [],
+      institutionAccountSummary: {
+        institutionsWithAutoFill: 0,
+        institutionsRequiringSelection: 0,
+        totalRowsPendingAccountSelection: 0,
+      },
+      exportArtifacts: {
+        mainFile: [],
+        reviewFile: [],
+        decisionLog: JSON.stringify({ generatedAt: new Date().toISOString(), totalRows: 0, decisions: [] }),
+      },
       summary: { totalRows: 0, importableRows: 0, reviewRows: 0 },
       error: 'Usuario nao autenticado',
     }
@@ -476,6 +487,12 @@ export async function analyzeNegociacaoFile(formData: FormData): Promise<Analyze
       availableClasses: [],
       existingAssets: [],
       institutionPreviews: [],
+      institutionAccountMappings: [],
+      institutionAccountSummary: {
+        institutionsWithAutoFill: 0,
+        institutionsRequiringSelection: 0,
+        totalRowsPendingAccountSelection: 0,
+      },
       summary: { totalRows: 0, readyCount: 0, unresolvedCount: 0, uniqueUnresolvedTickers: [] },
       error: 'Usuario nao autenticado',
     }
@@ -498,6 +515,12 @@ export async function analyzeNegociacaoFile(formData: FormData): Promise<Analyze
       availableClasses: [],
       existingAssets: [],
       institutionPreviews: [],
+      institutionAccountMappings: [],
+      institutionAccountSummary: {
+        institutionsWithAutoFill: 0,
+        institutionsRequiringSelection: 0,
+        totalRowsPendingAccountSelection: 0,
+      },
       summary: { totalRows: 0, readyCount: 0, unresolvedCount: 0, uniqueUnresolvedTickers: [] },
       error: message,
     }

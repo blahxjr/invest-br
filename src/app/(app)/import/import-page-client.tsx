@@ -1147,10 +1147,11 @@ function NegociacaoWizardCard() {
             institutionFilter={negociacaoInstitutionFilter}
             onInstitutionFilterChange={setNegociacaoInstitutionFilter}
             onLineChange={(id, patch) => {
-              if (patch.action) {
+              const nextAction = patch.action
+              if (nextAction) {
                 setNegociacaoRowActions((current) => ({
                   ...current,
-                  [id]: patch.action,
+                  [id]: nextAction,
                 }))
               }
 
@@ -1258,14 +1259,14 @@ function toMovimentacaoTableLines(lines: SerializableMovimentacaoLine[]): Import
     status: toReviewStatus(line.status),
     reason: line.reason,
     action: line.action,
-    type: line.type,
+    type: line.type ?? undefined,
     ticker: line.ticker,
     instituicao: line.instituicao,
     conta: line.conta,
     original: line.original,
     normalized: {
       date: line.normalized.date,
-      type: line.normalized.type,
+      type: line.normalized.type ?? null,
       ticker: line.normalized.ticker,
       instituicao: line.normalized.instituicao,
       quantity: line.normalized.quantity,
@@ -1366,16 +1367,17 @@ function MovimentacaoWizardCard() {
       )
 
       const hydratedLines = responseMappings.reduce((current, mapping) => {
-        if (mapping.autoFillStrategy !== 'SINGLE_ACCOUNT' || !mapping.suggestedAccountName) {
+        const suggestedAccountName = mapping.suggestedAccountName
+        if (mapping.autoFillStrategy !== 'SINGLE_ACCOUNT' || !suggestedAccountName) {
           return current
         }
 
         return current.map((line) =>
           line.instituicao === mapping.normalizedInstitutionName && !line.conta?.trim()
-            ? { ...line, conta: mapping.suggestedAccountName }
-            : line,
+            ? { ...line, conta: suggestedAccountName }
+            : { ...line, conta: line.conta ?? '' },
         )
-      }, response.lines)
+      }, response.lines.map((line) => ({ ...line, conta: line.conta ?? '' })))
 
       setAnalysis({
         ...response,
