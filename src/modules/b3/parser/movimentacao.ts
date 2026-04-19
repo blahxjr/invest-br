@@ -7,6 +7,7 @@ import type {
 } from './index'
 
 type RawRow = Array<string | number | null | undefined>
+export type AssetClass = 'RENDA_FIXA' | 'ACAO' | 'FII' | 'ETF' | 'OUTRO'
 
 function parseDate(value: string): Date | null {
   const cleaned = value.trim()
@@ -21,8 +22,9 @@ function parseNumberNullable(value: string | number | null | undefined): number 
   if (value == null) return null
   if (typeof value === 'number') return Number.isFinite(value) ? value : null
 
-  const cleaned = value.trim()
-  if (!cleaned || cleaned === '-') return null
+  // Remove símbolo monetário (R$), espaços extras e caracteres não numéricos de prefixo
+  const cleaned = value.trim().replace(/^R\$\s*/, '').replace(/\s+/g, '')
+  if (!cleaned || cleaned === '-' || cleaned === ' - ' || cleaned === '–') return null
 
   if (cleaned.includes(',') && cleaned.includes('.')) {
     const normalized = cleaned.replace(/\./g, '').replace(',', '.')
@@ -49,6 +51,35 @@ function normalizeMovement(value: string): string {
 
 function inferIsFiiTicker(ticker: string): boolean {
   return /^[A-Z]{4}11$/.test(ticker)
+}
+
+export function resolveAssetClass(produto: string, ticker?: string): AssetClass {
+  const normalizedTicker = String(ticker ?? '').trim().toUpperCase()
+  const normalizedProduto = normalizeMovement(produto)
+  const combined = normalizeMovement(`${normalizedTicker} ${produto}`)
+
+  const fixedIncomeTokens = ['cdb', 'lci', 'lca', 'cri', 'cra', 'tesouro', 'debenture', 'debentur']
+  if (fixedIncomeTokens.some((token) => combined.includes(token))) {
+    return 'RENDA_FIXA'
+  }
+
+  if (normalizedProduto.includes('etf')) {
+    return 'ETF'
+  }
+
+  if (/^[A-Z]{4}11$/.test(normalizedTicker) || normalizedTicker.endsWith('11')) {
+    return 'FII'
+  }
+
+  if (/^[A-Z]{4}[3-6]$/.test(normalizedTicker) || /[3-6]$/.test(normalizedTicker)) {
+    return 'ACAO'
+  }
+
+  if (normalizedTicker || normalizedProduto) {
+    return 'OUTRO'
+  }
+
+  throw new Error('Asset class não identificada — bloquear ingestão')
 }
 
 function inferFixedIncomeProfile(input: { ticker: string; produto: string }): {
@@ -92,6 +123,7 @@ export function classifyMovement(input: {
   const normalized = normalizeMovement(input.movimentacao)
   const direction = normalizeEntryDirection(input.entradaSaida)
   const isFii = inferIsFiiTicker(input.ticker)
+  const assetClass = resolveAssetClass(input.produto, input.ticker)
   const fixedIncomeProfile = inferFixedIncomeProfile({
     ticker: input.ticker,
     produto: input.produto,
@@ -142,24 +174,18 @@ export function classifyMovement(input: {
   }
 
   if (normalized === 'compra' || normalized === 'aplicacao') {
-    if (!fixedIncomeProfile.isFixedIncome) {
-      return {
-        type: null,
-        status: 'REVISAR',
-        classification: 'REVISAR',
-        reason: 'compra_sem_contexto_renda_fixa',
-        isIncoming: null,
-        isTaxExempt: false,
-      }
-    }
-
     return {
       type: 'BUY',
       status: 'OK',
       classification: 'LIQUIDACAO',
-      reason: normalized === 'aplicacao' ? 'aplicacao_renda_fixa' : 'compra_renda_fixa',
+      reason:
+        normalized === 'aplicacao'
+          ? 'aplicacao_renda_fixa'
+          : assetClass === 'RENDA_FIXA'
+            ? 'compra_renda_fixa'
+            : 'compra_outros_ativos',
       isIncoming: false,
-      isTaxExempt: fixedIncomeProfile.isTaxExempt,
+      isTaxExempt: assetClass === 'RENDA_FIXA' ? fixedIncomeProfile.isTaxExempt : false,
     }
   }
 
@@ -191,6 +217,23 @@ export function classifyMovement(input: {
       status: 'REVISAR',
       classification: 'REVISAR',
       reason: 'direcao_liquidacao_ambigua',
+      isIncoming: null,
+      isTaxExempt: false,
+    }
+  }
+
+  // Desconto de IRRF (retencao de imposto) — nao gera movimento de ativo, deve ser ignorado
+  if (
+    normalized.startsWith('irrf') ||
+    normalized.includes('imposto retido') ||
+    normalized.includes('retencao') ||
+    normalized === 'imposto de renda'
+  ) {
+    return {
+      type: null,
+      status: 'IGNORAR',
+      classification: 'IGNORAR',
+      reason: 'retencao_irrf_ignorada',
       isIncoming: null,
       isTaxExempt: false,
     }
@@ -240,7 +283,14 @@ export function classifyMovement(input: {
     }
   }
 
-  if (normalized.includes('subscricao nao exercida') || normalized.includes('subscricao não exercida') || normalized.includes('direito de subscricao expirado')) {
+  // Subscrição não exercida / expirada (várias nomenclaturas da B3)
+  if (
+    normalized.includes('subscricao nao exercida') ||
+    normalized.includes('subscricao não exercida') ||
+    normalized.includes('direito de subscricao expirado') ||
+    (normalized.includes('subscricao') && normalized.includes('nao exercid')) ||
+    (normalized.includes('subscricao') && normalized.includes('não exercid'))
+  ) {
     return {
       type: 'SUBSCRIPTION_EXPIRED',
       status: 'OK',
@@ -273,7 +323,7 @@ export function classifyMovement(input: {
     }
   }
 
-  if (normalized === 'atualizacao') {
+  if (normalized === 'atualizacao' || normalized.includes('atualizacao de preco') || normalized.includes('correcao monetaria')) {
     return {
       type: 'CORPORATE_UPDATE',
       status: 'OK',
@@ -358,6 +408,30 @@ export function classifyMovement(input: {
       reason: normalized === 'resgate antecipado' ? 'resgate_antecipado' : 'liquidacao_vencimento',
       isIncoming: true,
       isTaxExempt: fixedIncomeProfile.isTaxExempt,
+    }
+  }
+
+  // Amortizacao de cotas (FIIs, CRIs, debentures) — retorno parcial de capital
+  if (normalized.includes('amortizacao') || normalized === 'reembolso') {
+    return {
+      type: 'MATURITY',
+      status: 'OK',
+      classification: 'LIQUIDACAO',
+      reason: 'amortizacao_capital',
+      isIncoming: true,
+      isTaxExempt: fixedIncomeProfile.isTaxExempt,
+    }
+  }
+
+  // Grupamento (reverse split) — usa SPLIT como tipo universal de reagrupamento de cotas
+  if (normalized === 'grupamento' || normalized.includes('grupamento')) {
+    return {
+      type: 'SPLIT',
+      status: 'OK',
+      classification: 'EVENTO_CORPORATIVO',
+      reason: 'grupamento_acoes',
+      isIncoming: false,
+      isTaxExempt: false,
     }
   }
 

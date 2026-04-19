@@ -490,11 +490,14 @@ const MOVIMENTACAO_CASHLESS_TYPES = new Set<string>([
   'CORPORATE_UPDATE',
   'SPLIT',
   'BONUS_SHARES',
+  'FRACTIONAL_DEBIT',
+  'FRACTIONAL_AUCTION',
 ])
 
 const MOVIMENTACAO_OPTIONAL_QUANTITY_TYPES = new Set<string>([
   'DIVIDEND',
   'INCOME',
+  'MATURITY',
 ])
 
 function validateMovimentacaoLine(line: {
