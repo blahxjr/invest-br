@@ -2,10 +2,10 @@
 
 ## Identificacao
 - Tipo: movimentacao
-- Arquivo: nao verificado
-- Data/hora: nao verificado
-- Origem: nao verificado
-- Observacoes iniciais: nenhuma planilha real registrada nesta sessao. Este arquivo parte de evidencias de codigo, testes e memoria do projeto.
+- Arquivo: nao informado na verificacao desta sessao
+- Data/hora: verificacao em 2026-04-19; horario exato da importacao nao identificado no banco
+- Origem: relato manual do usuario de que a planilha foi importada
+- Observacoes iniciais: a verificacao foi feita por evidencia persistida no banco usando o cliente Prisma real do projeto. Nenhuma credencial foi exposta.
 
 ## Etapa 1: Leitura e parsing
 - Parser usado: parseMovimentacaoForReview / analyzeMovimentacaoRows (verificado no codigo)
@@ -16,11 +16,18 @@
 
 ## Etapa 2: Banco de dados
 - Tabelas afetadas: Client, Institution, Account, Asset, Transaction, LedgerEntry, AuditLog (verificado no codigo)
-- Registros criados: nao verificado em importacao real nesta sessao
-- Registros atualizados: nao verificado em importacao real nesta sessao
+- Registros criados: nao confirmados para movimentacao nesta sessao
+- Registros atualizados: nao confirmados para movimentacao nesta sessao
 - Registros ignorados: linhas com action SKIP, linhas invalidas e importacoes idempotentes sao ignoradas no fluxo confirmado (verificado no codigo)
 - Relacoes criadas: Account -> Institution -> Client; Transaction -> Account/Asset; LedgerEntry -> Transaction/Account (verificado no codigo)
-- Relacoes quebradas ou ausentes: nao verificado em importacao real nesta sessao
+- Relacoes quebradas ou ausentes: ate a verificacao desta sessao, nao ha trilha persistida suficiente para confirmar as relacoes do lote informado pelo usuario
+
+### Evidencia observada no banco
+
+- AuditLog IMPORT_B3_MOVIMENTACAO: 0 registros encontrados.
+- Transaction com assinatura de importacao de movimentacao: 0 registros encontrados.
+- LedgerEntry associado a transacoes com assinatura de importacao de movimentacao: 0 registros encontrados.
+- AuditLog recente contendo IMPORT_B3: encontrado apenas IMPORT_B3_NEGOCIACAO com changedAt 2026-04-19T13:21:41.136Z.
 
 ## Etapa 3: Interligacao entre modulos
 - Contas: importacao resolve ou cria conta por instituicao; havia historico de falha de UX para editar conta importada, mitigado em 19/04/2026 (verificado em memoria e auditoria)
@@ -33,14 +40,14 @@
 - Dashboard: nao verificado nesta sessao
 
 ## Etapa 4: Erros
-- Erros encontrados: sem nova reproducao nesta sessao; existem riscos criticos historicos de interligacao documentados no projeto.
-- Mensagens exatas: nao verificado nesta sessao
-- Onde ocorreu: nao verificado nesta sessao
-- Severidade: nao verificado nesta sessao
-- Reproduzivel?: nao confirmado nesta sessao
+- Erros encontrados: importacao de movimentacao nao confirmada por persistencia no banco apos relato manual do usuario.
+- Mensagens exatas: sem mensagem de erro da interface capturada nesta sessao.
+- Onde ocorreu: divergencia entre relato de importacao concluida e ausencia de AuditLog/Transaction/LedgerEntry correspondente.
+- Severidade: alta.
+- Reproduzivel?: ainda nao confirmado, pois o arquivo e o horario exato da execucao nao foram identificados.
 
 ## Etapa 5: Conclusao
-- O que funcionou: fluxo real do wizard, persistencia, auditoria e pontos de recalc foram mapeados com base no codigo.
-- O que falhou: nenhuma execucao real foi observada ainda; estado de dashboard e consistencia final ainda nao foram medidos nesta sessao.
-- Impacto: movimentacao continua sendo o foco critico de depuracao do projeto.
-- Proximo passo: executar importacao real de movimentacao e comparar planilha, linhas do wizard, banco, modulos operacionais e dashboard.
+- O que funcionou: a verificacao de banco conseguiu confirmar que o projeto continua gravando IMPORT_B3_NEGOCIACAO, entao o ambiente consultado esta respondendo.
+- O que falhou: a importacao de movimentacao informada pelo usuario nao deixou evidencia persistida localizavel em AuditLog, Transaction ou LedgerEntry ate esta verificacao.
+- Impacto: nao e seguro afirmar que a planilha de movimentacao foi registrada integralmente; prosseguir para a proxima planilha pode mascarar a falha atual.
+- Proximo passo: reproduzir a importacao de movimentacao com identificacao clara do arquivo e imediatamente revalidar banco e interface antes de seguir para a proxima planilha.

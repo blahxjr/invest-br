@@ -38,6 +38,15 @@
 - Impacto: contas, ativos e posicoes podem divergir do esperado apos importacao real.
 - Proximo teste sugerido: executar importacao real de movimentacao e registrar ponta a ponta o reflexo em contas, ativos, transacoes, ledger, posicoes e dashboard.
 
+### ID: IMP-005
+- Titulo: Relato de importacao de movimentacao sem trilha persistida correspondente
+- Tipo: persistencia/auditoria
+- Severidade: critica
+- Status: aberta
+- Evidencia: na verificacao realizada em 2026-04-19 com o cliente Prisma real do projeto, nao foi encontrado AuditLog com entityType IMPORT_B3_MOVIMENTACAO, nem Transaction com notes de Importacao B3 - Movimentacao, nem LedgerEntry associado; no mesmo ambiente foi encontrado AuditLog recente de IMPORT_B3_NEGOCIACAO em 2026-04-19T13:21:41.136Z.
+- Impacto: nao ha base confiavel para afirmar que a planilha de movimentacao foi registrada, conciliada ou refletida corretamente no sistema.
+- Proximo teste sugerido: repetir a importacao com identificacao do arquivo e conferir imediatamente AuditLog, Transaction, LedgerEntry, contas afetadas e reflexo nas telas.
+
 ## Critérios de fechamento
 
 - Nao fechar item sem evidencia direta em planilha real, banco e interface.

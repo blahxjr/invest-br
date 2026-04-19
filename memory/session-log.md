@@ -116,3 +116,25 @@
 1. Executar uma importacao real e preencher o registro correspondente ao tipo de planilha.
 2. Comparar o resultado do wizard com as tabelas AuditLog, Asset, Account, Transaction e LedgerEntry.
 3. Validar se o reflexo final aparece corretamente em /accounts, /assets, /positions e /dashboard.
+
+---
+
+# Session Log - 2026-04-19
+
+## Escopo executado
+
+- Usuario informou que a planilha de movimentacao havia sido importada.
+- Verificacao feita por consulta ao banco com o cliente Prisma real do app, sem expor segredos.
+- Objetivo: confirmar se houve persistencia completa da importacao antes de liberar a proxima planilha.
+
+## Evidencia observada
+
+- Nenhum AuditLog com entityType IMPORT_B3_MOVIMENTACAO foi encontrado.
+- Nenhuma Transaction com assinatura de notes Importacao B3 - Movimentacao foi encontrada.
+- Nenhum LedgerEntry associado a essa assinatura foi encontrado.
+- O ambiente consultado respondeu normalmente e mostrou AuditLog recente de IMPORT_B3_NEGOCIACAO em 2026-04-19T13:21:41.136Z.
+
+## Conclusao operacional
+
+- A importacao de movimentacao relatada pelo usuario nao ficou confirmada por evidencia persistida no banco ate esta verificacao.
+- Nao e seguro liberar a importacao da proxima planilha sem reproduzir ou localizar a execucao da movimentacao com trilha auditavel.

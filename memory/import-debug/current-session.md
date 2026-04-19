@@ -64,6 +64,9 @@ Objetivo: observar, registrar, comparar e organizar evidencias das importacoes r
 
 ## Estado atual
 
-- Nenhuma nova importacao real foi executada nesta sessao de depuracao.
-- Nenhum erro novo foi reproduzido nesta sessao de depuracao.
-- Qualquer comportamento nao listado acima deve ser tratado como nao verificado ate execucao real.
+- Usuario informou que a planilha de movimentacao foi importada em 2026-04-19.
+- Na verificacao de banco desta sessao, nao foi encontrado AuditLog com entityType IMPORT_B3_MOVIMENTACAO.
+- Na verificacao de banco desta sessao, nao foram encontradas Transaction com notes contendo Importacao B3 - Movimentacao nem LedgerEntry associado a esse padrao.
+- Foi encontrado apenas AuditLog recente de IMPORT_B3_NEGOCIACAO em 2026-04-19T13:21:41.136Z.
+- Conclusao parcial desta sessao: a importacao de movimentacao informada pelo usuario nao esta confirmada por evidencia persistida no banco ate este momento.
+- Qualquer comportamento nao listado acima deve ser tratado como nao verificado ate execucao real ou nova evidenciа direta.
