@@ -45,13 +45,39 @@ export type DebugImportResponse = {
 type RawRow = Array<string | number | null | undefined>
 
 function workbookFromArrayBuffer(buffer: ArrayBuffer) {
-  return XLSX.read(buffer, { type: 'array', cellDates: false })
+  const text = new TextDecoder('utf-8').decode(buffer)
+  return XLSX.read(text, { type: 'string', cellDates: false })
+}
+
+/**
+ * Corrige células que o XLSX auto-detectou erroneamente como datas no formato americano.
+ * Exemplo: '09/04/2026' (dd/mm/yyyy brasileiro) é interpretado como m/d/yy → serial,
+ * formatado como '9/4/26'. Reconvertemos trocando mês ↔ dia e usando ano completo.
+ */
+function fixWorksheetDateCells(ws: XLSX.WorkSheet): void {
+  for (const addr of Object.keys(ws)) {
+    if (addr.startsWith('!')) continue
+    const cell = ws[addr] as XLSX.CellObject
+    if (cell.t === 'n' && typeof cell.w === 'string') {
+      const match = cell.w.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/)
+      if (match) {
+        const [, m, d, yy] = match
+        const yyyy = 2000 + Number(yy)
+        const corrected = `${String(m).padStart(2, '0')}/${String(d).padStart(2, '0')}/${yyyy}`
+        cell.t = 's'
+        cell.v = corrected
+        cell.w = corrected
+      }
+    }
+  }
 }
 
 function sheetRows(workbook: XLSX.WorkBook, sheetName?: string): RawRow[] {
   const resolvedName = sheetName && workbook.Sheets[sheetName] ? sheetName : workbook.SheetNames[0]
   const worksheet = workbook.Sheets[resolvedName]
   if (!worksheet) return []
+
+  fixWorksheetDateCells(worksheet)
 
   return XLSX.utils.sheet_to_json(worksheet, {
     header: 1,
