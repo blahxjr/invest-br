@@ -113,3 +113,25 @@
 - Permite personalização por escopo sem alterar a base do motor.
 - Mantém compatibilidade com comportamento atual mesmo sem configurações criadas.
 - Abre caminho para telas PF e consultor sem introduzir complexidade de compliance/snapshot na V1.
+
+## DEC-017 — Posição B3: múltiplos CSVs por categoria
+
+**Contexto:** A B3 exporta a posição em 6 arquivos CSV separados (acoes, bdr, etf, fundos, rendafixa, tesourodireto), cada um com estrutura de colunas diferente. O sistema anteriormente esperava um único XLSX com múltiplas sheets.
+
+**Decisão:**
+- O parser de posição passa a aceitar múltiplos arquivos CSV. O `sheetName` é inferido pelo nome do arquivo.
+- Cada tipo de arquivo tem um `rawFromRowBySheet` específico para mapear as colunas corretas:
+  - acoes/fundos: ticker[3], tipo[6], qty[8], price[12], value[13]
+  - bdr: ticker[3], tipo[5], qty[7], price[11], value[12]
+  - etf: ticker[3], tipo[6], qty[7], price[11], value[12]
+  - rendafixa: código[3], qty[8], value: FECHAMENTO[18] > CURVA[16] > MTM[14]
+  - tesourodireto: ticker derivado do produto, qty[5], value[12]
+- Categorias adicionadas: `FIXED_INCOME` e `FUND` em `PosicaoRow['category']`
+- `FUND` → `AssetCategory.FII` no banco (até que exista categoria própria)
+- `FIXED_INCOME` → `AssetCategory.FIXED_INCOME` no banco
+- A UI de posição aceita `multiple` files com `accept=".csv,.xlsx,.xls"`
+
+**Consequência:**
+- Fluxo prático: usuário baixa os CSVs do B3, seleciona todos de uma vez na UI e importa.
+- Arquivos com nomes não padronizados (sem padrão acoes/bdr/etf/fundos/rendafixa/tesourodireto) usam o próprio nome como sheetName.
+- Movimentação: UI alterada para aceitar `.csv` também (além de XLSX).

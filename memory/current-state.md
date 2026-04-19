@@ -1,6 +1,21 @@
 # Estado atual do projeto
 
-**Última atualização:** 2026-04-15 (P18 - Positions v2 enriquecimento + dual view + filtros + allocation fix)
+**Última atualização:** 2026-04-19 (DEC-017 - suporte a múltiplos CSVs de posição B3)
+
+## Prioridade V2 ativa (19/04/2026)
+
+- Prioridade #1: **Importacao de dados** (B3 movimentacao) antes de Cripto, Previdencia, Multi-corretora e Relatorios.
+- Motivo: existem falhas criticas de interconexao entre importacao e modulos operacionais (contas/ativos/posicoes).
+- Diretriz: qualquer proximo ciclo deve iniciar por estabilizacao do fluxo `movimentacao -> transacao -> ledger -> posicao/ativos`.
+
+## Riscos criticos mapeados (Importacao B3)
+
+- UX de contas importadas: contas eram criadas automaticamente pela importacao, mas sem fluxo de edicao visivel no modulo de contas.
+  - Status 19/04: **mitigado** com nova rota de edicao em `/accounts/[id]/edit` e acao "Editar conta" na listagem.
+- Acoplamento de dados de ativo: no fluxo de movimentacao, ativos novos podem ser criados com nome simplificado (ticker), reduzindo qualidade de cadastro no modulo de ativos.
+  - Status 19/04: **parcialmente mitigado** no fluxo principal (confirmacao do wizard), agora com nome derivado de produto e fallback seguro.
+- Documentacao de importacao desatualizada em pontos do fluxo real (wizard de analise/revisao/confirmacao).
+- Necessidade de reforcar testes E2E de interconexao entre modulos apos importacao (conta, transacao, ledger, posicoes, ativos).
 
 ## Stack
 - Next.js 16.2.2 (App Router) + React 19 + TypeScript
@@ -54,9 +69,10 @@ Arquivos-chave: src/modules/income/service.ts
 Contratos: createIncomeEvent, getIncomeEventsByAccount, getTotalIncomeByAccount, createRentalReceipt, getRentalReceiptsByAccount, calculatePositionByAsset, getPositionsByAccount
 
 ### Import B3
-Status: implementado (negociacao, movimentacao e posicao).
+Status: implementado com suporte a múltiplos CSVs (negociacao, movimentacao e posicao).
 Arquivos-chave: src/modules/b3/parser/*.ts, src/modules/b3/service.ts, src/app/(app)/import/actions.ts
 Contratos: parseNegociacaoRow, parseMovimentacaoRow, parsePosicaoRow, persistNegociacao, persistMovimentacao, syncPosicao
+Nota (DEC-017): posição aceita 6 tipos de CSV da B3 (acoes, bdr, etf, fundos, rendafixa, tesourodireto), cada um com mapeamento de colunas específico. UI aceita múltiplos arquivos com `accept=".csv,.xlsx,.xls"`.
 
 ### Positions
 Status: v2 completo com enriquecimento de dados, dual view, filtros e alocacao baseada em valor de mercado.
@@ -103,8 +119,8 @@ Contratos: rota /performance com filtro client-side por periodo e KPIs de evoluc
 - ✅ Cleanup: zero console.log em src/app, zero `: any` de tipos de domínio
 
 ## Testes
-- Total: 239 passed, 0 failed, 0 skipped (P18 +11 testes PositionsEnrichment)
-- Arquivos de teste: 40
+- Total: 304 passed, 0 failed, 0 skipped
+- Arquivos de teste: 46
 - Novos testes P17:
   - EmptyState.test.tsx: 4
   - Skeleton.test.tsx: 2
@@ -177,9 +193,10 @@ Arquivos-chave: src/modules/income/service.ts
 Contratos: createIncomeEvent, getIncomeEventsByAccount, getTotalIncomeByAccount, createRentalReceipt, getRentalReceiptsByAccount, calculatePositionByAsset, getPositionsByAccount
 
 ### Import B3
-Status: implementado (negociacao, movimentacao e posicao).
+Status: implementado com suporte a múltiplos CSVs (negociacao, movimentacao e posicao).
 Arquivos-chave: src/modules/b3/parser/*.ts, src/modules/b3/service.ts, src/app/(app)/import/actions.ts
 Contratos: parseNegociacaoRow, parseMovimentacaoRow, parsePosicaoRow, persistNegociacao, persistMovimentacao, syncPosicao
+Nota (DEC-017): posição aceita 6 tipos de CSV da B3 (acoes, bdr, etf, fundos, rendafixa, tesourodireto), cada um com mapeamento de colunas específico. UI aceita múltiplos arquivos com `accept=".csv,.xlsx,.xls"`.
 
 ### Positions
 Status: v2 completo com enriquecimento de dados, dual view, filtros e alocacao baseada em valor de mercado (P18).
