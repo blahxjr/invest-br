@@ -295,7 +295,25 @@ function inferCategoryFromTickerAndMarket(ticker: string, mercado?: string): Pos
   const upperTicker = ticker.toUpperCase()
   const lowerMarket = (mercado ?? '').toLowerCase()
 
-  if (lowerMarket.includes('renda fixa')) return 'ETF'
+  const isFixedIncomeTicker =
+    upperTicker.startsWith('CDB')
+    || upperTicker.startsWith('LCI')
+    || upperTicker.startsWith('LCA')
+    || upperTicker.startsWith('CRI')
+    || upperTicker.startsWith('CRA')
+    || upperTicker.startsWith('DEB')
+    || upperTicker.startsWith('RDB')
+    || upperTicker.startsWith('TESOURO')
+    || upperTicker.startsWith('TNFS')
+    || upperTicker.startsWith('TNLF')
+    || upperTicker.startsWith('NTNB')
+    || upperTicker.startsWith('NTNF')
+    || upperTicker.startsWith('LFT')
+    || upperTicker.startsWith('LTN')
+
+  if (lowerMarket.includes('renda fixa') || lowerMarket.includes('tesouro') || isFixedIncomeTicker) {
+    return 'FIXED_INCOME'
+  }
   if (upperTicker.endsWith('11')) return 'FII'
   return 'STOCK'
 }
@@ -767,6 +785,94 @@ export async function upsertAssetFromImport(
   })
 
   return asset.id
+}
+
+async function getCurrentQuantityForAccountAsset(accountId: string, assetId: string): Promise<Prisma.Decimal> {
+  const transactions = await prisma.transaction.findMany({
+    where: {
+      accountId,
+      assetId,
+      type: { in: ['BUY', 'SELL'] },
+      deletedAt: null,
+    },
+    select: {
+      type: true,
+      quantity: true,
+    },
+  })
+
+  return transactions.reduce((acc, tx) => {
+    const qty = tx.quantity ?? new Prisma.Decimal(0)
+    if (tx.type === 'BUY') return acc.plus(qty)
+    if (tx.type === 'SELL') return acc.minus(qty)
+    return acc
+  }, new Prisma.Decimal(0))
+}
+
+function buildPosicaoAdjustmentReferenceId(
+  accountId: string,
+  ticker: string,
+  targetQuantity: Prisma.Decimal,
+  updatedValue: Prisma.Decimal,
+): string {
+  const raw = `${accountId}|${ticker}|${targetQuantity.toString()}|${updatedValue.toString()}`
+  const digest = createHash('sha256').update(raw).digest('hex')
+  return `b3-posicao-ajuste-${digest}`
+}
+
+async function applyPosicaoSnapshotAdjustment(input: {
+  userId: string
+  accountId: string
+  assetId: string
+  ticker: string
+  targetQuantity: number
+  closePrice: number
+  updatedValue: number
+  lineNumber?: number
+}): Promise<'adjusted' | 'already-matched' | 'idempotent'> {
+  const targetQty = new Prisma.Decimal(input.targetQuantity.toString())
+  const currentQty = await getCurrentQuantityForAccountAsset(input.accountId, input.assetId)
+  const delta = targetQty.minus(currentQty)
+
+  if (delta.eq(0)) {
+    return 'already-matched'
+  }
+
+  const absoluteDelta = delta.abs()
+  const updatedValue = new Prisma.Decimal(Math.max(0, input.updatedValue).toString())
+  const closePrice = new Prisma.Decimal(Math.max(0, input.closePrice).toString())
+
+  const avgPriceFromSnapshot = targetQty.gt(0)
+    ? updatedValue.div(targetQty)
+    : new Prisma.Decimal(0)
+
+  const effectivePrice = avgPriceFromSnapshot.gt(0)
+    ? avgPriceFromSnapshot
+    : closePrice
+
+  const totalAmount = effectivePrice.gt(0)
+    ? effectivePrice.times(absoluteDelta)
+    : new Prisma.Decimal(0)
+
+  const referenceId = scopeReferenceIdForUser(
+    input.userId,
+    buildPosicaoAdjustmentReferenceId(input.accountId, input.ticker, targetQty, updatedValue),
+  )
+
+  const tx = await createTransaction({
+    referenceId,
+    type: delta.gt(0) ? 'BUY' : 'SELL',
+    accountId: input.accountId,
+    assetId: input.assetId,
+    quantity: absoluteDelta.toString(),
+    price: effectivePrice.toString(),
+    totalAmount: totalAmount.toString(),
+    date: new Date(),
+    sourceMovementType: 'Importacao Posicao B3',
+    notes: `Ajuste de posicao B3${typeof input.lineNumber === 'number' ? ` (linha ${input.lineNumber})` : ''}`,
+  })
+
+  return tx.idempotent ? 'idempotent' : 'adjusted'
 }
 
 /**
@@ -1779,8 +1885,19 @@ export async function confirmAndImportPosicaoForUser(
     }
 
     try {
-      await resolveImportAccountForInstitution(line.instituicao, clientId, prisma, line.conta, portfolioId)
-      await upsertAssetFromImport(line.ticker, line.name, line.category)
+      const resolution = await resolveImportAccountForInstitution(line.instituicao, clientId, prisma, line.conta, portfolioId)
+      const assetId = await upsertAssetFromImport(line.ticker, line.name, line.category)
+      const adjustment = await applyPosicaoSnapshotAdjustment({
+        userId,
+        accountId: resolution.accountId,
+        assetId,
+        ticker: line.ticker,
+        targetQuantity: line.quantity,
+        closePrice: line.closePrice,
+        updatedValue: line.updatedValue,
+        lineNumber: line.lineNumber,
+      })
+
       upserted++
       const wasExisting = existingTickerSet.has(line.ticker)
       lineAudit.push({
@@ -1789,6 +1906,7 @@ export async function confirmAndImportPosicaoForUser(
         ticker: line.ticker,
         classification: line.classification,
         reason: line.reason,
+        positionAdjustment: adjustment,
       })
       existingTickerSet.add(line.ticker)
     } catch (error) {
@@ -2045,7 +2163,16 @@ export async function importPosicaoRows(userId: string, rows: PosicaoRow[]): Pro
         accountCreated: resolution.accountCreated,
       })
 
-      await upsertAssetFromImport(row.ticker, row.name, row.category)
+      const assetId = await upsertAssetFromImport(row.ticker, row.name, row.category)
+      await applyPosicaoSnapshotAdjustment({
+        userId,
+        accountId: resolution.accountId,
+        assetId,
+        ticker: row.ticker,
+        targetQuantity: row.quantity,
+        closePrice: row.closePrice,
+        updatedValue: row.updatedValue,
+      })
       upserted++
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro desconhecido'
