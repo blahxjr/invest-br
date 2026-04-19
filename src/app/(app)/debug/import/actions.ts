@@ -1,6 +1,10 @@
 'use server'
 
+import { appendFile, mkdir, readdir, readFile } from 'node:fs/promises'
+import path from 'node:path'
+import { revalidatePath } from 'next/cache'
 import { auth } from '@/lib/auth'
+import { prisma } from '@/lib/prisma'
 import {
   importMovimentacaoRows,
   importNegociacaoRows,
@@ -13,6 +17,7 @@ import {
   parsePosicao,
   type RawSheet,
 } from '@/modules/b3/parser'
+import { getPortfolioSummary } from '@/modules/positions/service'
 import * as XLSX from 'xlsx'
 
 export type DebugImportStep = 'NEGOCIACAO' | 'MOVIMENTACAO' | 'POSICAO'
@@ -250,5 +255,454 @@ export async function importPosicaoDebug(formData: FormData): Promise<DebugImpor
     return successResponse('POSICAO', parsed.length, preview, result)
   } catch (error) {
     return errorResponse('POSICAO', error instanceof Error ? error.message : 'Erro desconhecido')
+  }
+}
+
+// ─── analyzeImport ───────────────────────────────────────────────────────────
+
+export type ImportType = 'negociacao' | 'movimentacao' | 'posicao'
+
+export type RecentAuditEntry = {
+  id: string
+  entityType: string
+  action: string
+  changedAt: string
+  newValue: string | null
+}
+
+export type RecentTransaction = {
+  id: string
+  referenceId: string
+  type: string
+  accountId: string
+  assetId: string | null
+  totalAmount: string
+  date: string
+  notes: string | null
+  createdAt: string
+}
+
+export type RecentLedgerEntry = {
+  id: string
+  transactionId: string
+  accountId: string
+  debit: string | null
+  credit: string | null
+  balanceAfter: string
+  createdAt: string
+}
+
+export type DashboardMetrics = {
+  totalCost: string
+  totalValue: string
+  totalGainLoss: string
+  assetCount: number
+  topPositions: Array<{
+    ticker: string
+    name: string
+    totalCost: string
+    currentValue: string | null
+  }>
+}
+
+export type PostImportDbSnapshot = {
+  auditLogsCount: number
+  recentAuditLogs: RecentAuditEntry[]
+  recentTransactions: RecentTransaction[]
+  recentLedgerEntries: RecentLedgerEntry[]
+  affectedAccountIds: string[]
+  dashboardMetrics: DashboardMetrics | null
+}
+
+export type AnalyzeImportResponse = {
+  ok: boolean
+  type: ImportType
+  importResult: {
+    parsedRows: number
+    imported: number
+    skipped: number
+    upserted: number
+    errorsCount: number
+    errors: string[]
+  }
+  dbSnapshot: PostImportDbSnapshot
+  preview: PreviewTable
+  logsMd: string
+}
+
+const IMPORT_DEBUG_DIR = path.resolve(process.cwd(), 'memory', 'import-debug')
+const ENTITY_TYPE_MAP: Record<ImportType, string> = {
+  negociacao: 'IMPORT_B3_NEGOCIACAO',
+  movimentacao: 'IMPORT_B3_MOVIMENTACAO',
+  posicao: 'IMPORT_B3_POSICAO',
+}
+
+async function queryPostImportSnapshot(
+  userId: string,
+  importType: ImportType,
+): Promise<PostImportDbSnapshot> {
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000)
+  const entityType = ENTITY_TYPE_MAP[importType]
+
+  // Conta AuditLogs recentes do tipo da importacao
+  const [auditLogsCount, recentAuditLogs] = await Promise.all([
+    prisma.auditLog.count({
+      where: { entityType, changedAt: { gte: oneHourAgo } },
+    }),
+    prisma.auditLog.findMany({
+      where: { entityType, changedAt: { gte: oneHourAgo } },
+      orderBy: { changedAt: 'desc' },
+      take: 5,
+      select: { id: true, entityType: true, action: true, changedAt: true, newValue: true },
+    }),
+  ])
+
+  // Busca transacoes recentes vinculadas ao usuario
+  const recentTransactionsRaw = await prisma.transaction.findMany({
+    where: {
+      createdAt: { gte: oneHourAgo },
+      account: { client: { userId } },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 20,
+    select: {
+      id: true,
+      referenceId: true,
+      type: true,
+      accountId: true,
+      assetId: true,
+      totalAmount: true,
+      date: true,
+      notes: true,
+      createdAt: true,
+    },
+  })
+
+  const affectedAccountIds = [...new Set(recentTransactionsRaw.map((t) => t.accountId))]
+
+  // LedgerEntries das contas afetadas criados recentemente
+  const recentLedgerEntriesRaw =
+    affectedAccountIds.length > 0
+      ? await prisma.ledgerEntry.findMany({
+          where: {
+            accountId: { in: affectedAccountIds },
+            createdAt: { gte: oneHourAgo },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 20,
+          select: {
+            id: true,
+            transactionId: true,
+            accountId: true,
+            debit: true,
+            credit: true,
+            balanceAfter: true,
+            createdAt: true,
+          },
+        })
+      : []
+
+  // Metricas do dashboard
+  let dashboardMetrics: DashboardMetrics | null = null
+  try {
+    const summary = await getPortfolioSummary(userId)
+    dashboardMetrics = {
+      totalCost: summary.totalCost.toString(),
+      totalValue: summary.totalValue.toString(),
+      totalGainLoss: summary.totalGainLoss.toString(),
+      assetCount: summary.assetCount,
+      topPositions: summary.topPositions.map((p) => ({
+        ticker: p.ticker,
+        name: p.name,
+        totalCost: p.totalCost,
+        currentValue: p.currentValue ?? null,
+      })),
+    }
+  } catch {
+    // dashboard nao bloqueia analise
+  }
+
+  return {
+    auditLogsCount,
+    recentAuditLogs: recentAuditLogs.map((a) => ({
+      ...a,
+      changedAt: a.changedAt.toISOString(),
+    })),
+    recentTransactions: recentTransactionsRaw.map((t) => ({
+      ...t,
+      type: String(t.type),
+      totalAmount: t.totalAmount.toString(),
+      date: t.date.toISOString(),
+      createdAt: t.createdAt.toISOString(),
+    })),
+    recentLedgerEntries: recentLedgerEntriesRaw.map((entry) => ({
+      ...entry,
+      debit: entry.debit?.toString() ?? null,
+      credit: entry.credit?.toString() ?? null,
+      balanceAfter: entry.balanceAfter.toString(),
+      createdAt: entry.createdAt.toISOString(),
+    })),
+    affectedAccountIds,
+    dashboardMetrics,
+  }
+}
+
+function buildAnalyzeMarkdownLog(
+  importType: ImportType,
+  parsedRows: number,
+  result: ImportResult,
+  snapshot: PostImportDbSnapshot,
+): string {
+  const now = new Date().toISOString()
+  const counts = resultToCounts(result)
+  const errors = result.errors.slice(0, 20)
+  const top5 = (snapshot.dashboardMetrics?.topPositions ?? []).slice(0, 5)
+
+  return [
+    `# Analise Import ${importType.toUpperCase()}`,
+    '',
+    `- generatedAt: ${now}`,
+    `- parsedRows: ${parsedRows}`,
+    `- imported: ${counts.imported}`,
+    `- skipped: ${counts.skipped}`,
+    `- upserted: ${counts.upserted}`,
+    `- errorsCount: ${counts.errorsCount}`,
+    '',
+    '## BD Snapshot (ultima 1h)',
+    '',
+    `- auditLogsCount: ${snapshot.auditLogsCount}`,
+    `- recentTransactions: ${snapshot.recentTransactions.length}`,
+    `- recentLedgerEntries: ${snapshot.recentLedgerEntries.length}`,
+    `- affectedAccounts: ${snapshot.affectedAccountIds.join(', ') || 'nenhuma'}`,
+    '',
+    '## Dashboard Metrics',
+    '',
+    snapshot.dashboardMetrics
+      ? [
+          `- totalCost: ${snapshot.dashboardMetrics.totalCost}`,
+          `- totalValue: ${snapshot.dashboardMetrics.totalValue}`,
+          `- totalGainLoss: ${snapshot.dashboardMetrics.totalGainLoss}`,
+          `- assetCount: ${snapshot.dashboardMetrics.assetCount}`,
+          '',
+          '### Top 5 Posicoes',
+          top5.map((p) => `- ${p.ticker}: custo=${p.totalCost} valor=${p.currentValue ?? 'sem_cotacao'}`).join('\n') || '- nenhuma',
+        ].join('\n')
+      : '- indisponivel',
+    '',
+    '## Errors',
+    '',
+    errors.length > 0 ? errors.map((item) => `- ${item}`).join('\n') : '- none',
+  ].join('\n')
+}
+
+/**
+ * Executa importacao B3 completa, consulta BD imediatamente apos e retorna
+ * relatorio estruturado com snapshot de auditoria, transacoes, ledger e dashboard.
+ */
+export async function analyzeImport(
+  importType: ImportType,
+  file: File,
+): Promise<AnalyzeImportResponse> {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return {
+      ok: false,
+      type: importType,
+      importResult: { parsedRows: 0, imported: 0, skipped: 0, upserted: 0, errorsCount: 1, errors: ['Usuario nao autenticado'] },
+      dbSnapshot: {
+        auditLogsCount: 0,
+        recentAuditLogs: [],
+        recentTransactions: [],
+        recentLedgerEntries: [],
+        affectedAccountIds: [],
+        dashboardMetrics: null,
+      },
+      preview: { columns: [], rows: [] },
+      logsMd: `# Analise Import ${importType.toUpperCase()}\n\n- status: failed\n- error: Usuario nao autenticado`,
+    }
+  }
+
+  const userId = session.user.id
+
+  try {
+    if (file.size === 0) throw new Error('Arquivo vazio')
+
+    const buffer = await file.arrayBuffer()
+    const workbook = workbookFromArrayBuffer(buffer)
+
+    let result: ImportResult
+    let parsedRows: number
+    let preview: PreviewTable
+
+    if (importType === 'negociacao') {
+      const rows = sheetRowsForNegociacao(workbook)
+      const parsed = parseNegociacao(rows)
+      parsedRows = parsed.length
+      result = await importNegociacaoRows(userId, parsed)
+      preview = {
+        columns: ['Data', 'Tipo', 'Ticker', 'Instituicao', 'Quantidade', 'Preco', 'Total'],
+        rows: parsed.slice(0, 10).map((row) => [
+          formatDate(row.date),
+          row.type,
+          row.ticker,
+          row.instituicao || '-',
+          String(row.quantity),
+          String(row.price),
+          String(row.total),
+        ]),
+      }
+    } else if (importType === 'movimentacao') {
+      const rows = sheetRows(workbook, 'Movimentação')
+      const parsedResult = parseMovimentacao(rows)
+      parsedRows = parsedResult.readyRows.length
+      result = await importMovimentacaoRows(userId, parsedResult.readyRows, parsedResult.reviewRows)
+      preview = {
+        columns: ['Data', 'Tipo', 'Ticker', 'Instituicao', 'Quantidade', 'Valor Operacao'],
+        rows: parsedResult.readyRows.slice(0, 10).map((row) => [
+          formatDate(row.date),
+          row.type,
+          row.ticker,
+          row.instituicao || '-',
+          String(row.quantity),
+          String(row.total ?? 0),
+        ]),
+      }
+    } else {
+      const parsed = parsePosicao(allSheets(workbook))
+      parsedRows = parsed.length
+      result = await importPosicaoRows(userId, parsed)
+      preview = {
+        columns: ['Ticker', 'Nome', 'Categoria', 'Quantidade', 'Preco Fechamento', 'Valor Atualizado'],
+        rows: parsed.slice(0, 10).map((row) => [
+          row.ticker,
+          row.name,
+          row.category,
+          String(row.quantity),
+          String(row.closePrice),
+          String(row.updatedValue),
+        ]),
+      }
+    }
+
+    const snapshot = await queryPostImportSnapshot(userId, importType)
+    const logsMd = buildAnalyzeMarkdownLog(importType, parsedRows, result, snapshot)
+    const counts = resultToCounts(result)
+
+    revalidatePath('/debug/import')
+
+    return {
+      ok: true,
+      type: importType,
+      importResult: { parsedRows, ...counts, errors: result.errors },
+      dbSnapshot: snapshot,
+      preview,
+      logsMd,
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido'
+    const emptySnapshot: PostImportDbSnapshot = {
+      auditLogsCount: 0,
+      recentAuditLogs: [],
+      recentTransactions: [],
+      recentLedgerEntries: [],
+      affectedAccountIds: [],
+      dashboardMetrics: null,
+    }
+    return {
+      ok: false,
+      type: importType,
+      importResult: { parsedRows: 0, imported: 0, skipped: 0, upserted: 0, errorsCount: 1, errors: [message] },
+      dbSnapshot: emptySnapshot,
+      preview: { columns: [], rows: [] },
+      logsMd: `# Analise Import ${importType.toUpperCase()}\n\n- status: failed\n- error: ${message}`,
+    }
+  }
+}
+
+// ─── getDebugLogs ────────────────────────────────────────────────────────────
+
+export type DebugLogFile = {
+  filename: string
+  content: string
+}
+
+/**
+ * Le todos os arquivos .md de memory/import-debug/ e retorna array de logs.
+ */
+export async function getDebugLogs(): Promise<DebugLogFile[]> {
+  const session = await auth()
+  if (!session?.user?.id) return []
+
+  try {
+    const entries = await readdir(IMPORT_DEBUG_DIR)
+    const mdFiles = entries.filter((name) => name.endsWith('.md')).sort()
+
+    const logs = await Promise.all(
+      mdFiles.map(async (filename) => {
+        try {
+          const content = await readFile(path.join(IMPORT_DEBUG_DIR, filename), 'utf-8')
+          return { filename, content }
+        } catch {
+          return { filename, content: '(erro ao ler arquivo)' }
+        }
+      }),
+    )
+
+    return logs
+  } catch {
+    return []
+  }
+}
+
+// ─── updateIssuesOpen ────────────────────────────────────────────────────────
+
+export type UpdateIssuesResponse = {
+  ok: boolean
+  appended: number
+  error?: string
+}
+
+/**
+ * Faz append de novos issues em memory/import-debug/issues-open.md.
+ * Cada string do array vira um item de lista no arquivo.
+ */
+export async function updateIssuesOpen(
+  newIssues: string[],
+): Promise<UpdateIssuesResponse> {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return { ok: false, appended: 0, error: 'Usuario nao autenticado' }
+  }
+
+  if (!Array.isArray(newIssues) || newIssues.length === 0) {
+    return { ok: false, appended: 0, error: 'Nenhum issue fornecido' }
+  }
+
+  const sanitized = newIssues
+    .map((issue) => String(issue).trim())
+    .filter((issue) => issue.length > 0 && issue.length <= 500)
+
+  if (sanitized.length === 0) {
+    return { ok: false, appended: 0, error: 'Issues invalidos ou muito longos (max 500 chars cada)' }
+  }
+
+  const issuesFile = path.join(IMPORT_DEBUG_DIR, 'issues-open.md')
+  const timestamp = new Date().toISOString()
+  const lines = sanitized.map((issue) => `- [${timestamp}] ${issue}`)
+  const appendBlock = `\n${lines.join('\n')}\n`
+
+  try {
+    await mkdir(IMPORT_DEBUG_DIR, { recursive: true })
+    await appendFile(issuesFile, appendBlock, 'utf-8')
+
+    revalidatePath('/debug/import')
+
+    return { ok: true, appended: sanitized.length }
+  } catch (error) {
+    return {
+      ok: false,
+      appended: 0,
+      error: error instanceof Error ? error.message : 'Erro ao gravar issues',
+    }
   }
 }
