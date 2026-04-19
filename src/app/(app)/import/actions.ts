@@ -220,6 +220,50 @@ async function getUploadedFile(formData: FormData): Promise<File> {
   return file
 }
 
+/**
+ * Detecta o nome normalizado da sheet B3 a partir do nome do arquivo.
+ */
+function sheetNameFromFilename(filename: string): string {
+  const lower = filename.toLowerCase()
+  if (/acoes|ações/.test(lower)) return 'Acoes'
+  if (/bdr/.test(lower)) return 'BDR'
+  if (/etf/.test(lower)) return 'ETF'
+  if (/fundos/.test(lower)) return 'Fundo de Investimento'
+  if (/rendafixa|renda[_\-.~]fixa/.test(lower)) return 'Renda Fixa'
+  if (/tesourodireto|tesouro[_\-.~]direto/.test(lower)) return 'Tesouro Direto'
+  return filename
+}
+
+/**
+ * Lê múltiplos arquivos CSV/XLSX do formData e os unifica em um array de RawSheets.
+ * Usa o nome do arquivo para determinar o tipo da sheet.
+ */
+async function sheetsFromMultipleFiles(formData: FormData): Promise<RawSheet[]> {
+  const entries = formData.getAll('files')
+  const files = entries.filter((e): e is File => e instanceof File && e.size > 0)
+
+  if (files.length === 0) {
+    // fallback: tenta campo singular 'file'
+    const single = formData.get('file')
+    if (single instanceof File && single.size > 0) {
+      const wb = workbookFromArrayBuffer(await single.arrayBuffer())
+      return allSheets(wb)
+    }
+    throw new Error('Nenhum arquivo enviado')
+  }
+
+  const combined: RawSheet[] = []
+  for (const file of files) {
+    const wb = workbookFromArrayBuffer(await file.arrayBuffer())
+    const detectedName = sheetNameFromFilename(file.name)
+    combined.push({
+      name: detectedName,
+      rows: sheetRows(wb, wb.SheetNames[0]),
+    })
+  }
+  return combined
+}
+
 function sheetRowsForNegociacao(workbook: XLSX.WorkBook): Array<Array<string | number | null | undefined>> {
   return sheetRows(workbook, 'Negociação').length > 0
     ? sheetRows(workbook, 'Negociação')
@@ -428,9 +472,8 @@ export async function analyzePosicaoFile(formData: FormData): Promise<AnalyzePos
   }
 
   try {
-    const file = await getUploadedFile(formData)
-    const workbook = workbookFromArrayBuffer(await file.arrayBuffer())
-    const parsedLines = parsePosicaoForReview(allSheets(workbook))
+    const sheets = await sheetsFromMultipleFiles(formData)
+    const parsedLines = parsePosicaoForReview(sheets)
     return await analyzePosicaoRows(parsedLines)
   } catch (error) {
     return {

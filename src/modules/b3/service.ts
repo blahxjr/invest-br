@@ -304,6 +304,8 @@ function toDbCategory(category: PosicaoRow['category']): DbCategory {
   if (category === 'FII') return AssetCategory.FII
   if (category === 'ETF') return AssetCategory.ETF
   if (category === 'BDR') return AssetCategory.BDR
+  if (category === 'FIXED_INCOME') return AssetCategory.FIXED_INCOME
+  if (category === 'FUND') return AssetCategory.FII
   return AssetCategory.STOCK
 }
 

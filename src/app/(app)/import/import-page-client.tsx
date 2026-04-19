@@ -1438,7 +1438,7 @@ function MovimentacaoWizardCard() {
           <input
             type="file"
             name="file"
-            accept=".xlsx,.xls"
+            accept=".csv,.xlsx,.xls"
             className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100"
             required
           />
@@ -1695,10 +1695,14 @@ function PosicaoWizardCard() {
             handleAnalyze(new FormData(event.currentTarget))
           }}
         >
+          <label className="text-xs text-gray-500">
+            Selecione um ou mais arquivos CSV da B3 (acoes, bdr, etf, fundos, rendafixa, tesourodireto)
+          </label>
           <input
             type="file"
-            name="file"
-            accept=".xlsx,.xls"
+            name="files"
+            accept=".csv,.xlsx,.xls"
+            multiple
             className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100"
             required
           />
@@ -1745,7 +1749,7 @@ function PosicaoWizardCard() {
               if (typeof patch.ticker === 'string') next.ticker = patch.ticker.toUpperCase()
               if (typeof patch.instituicao === 'string') next.instituicao = patch.instituicao.toUpperCase()
               if (typeof patch.conta === 'string') next.conta = patch.conta
-              if (typeof patch.type === 'string' && ['STOCK', 'FII', 'ETF', 'BDR'].includes(patch.type)) {
+              if (typeof patch.type === 'string' && ['STOCK', 'FII', 'ETF', 'BDR', 'FIXED_INCOME', 'FUND'].includes(patch.type)) {
                 next.category = patch.type as PosicaoReviewLine['category']
               }
               updateLine(id, next)

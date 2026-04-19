@@ -1,3 +1,5 @@
+import type { TransactionType } from '@prisma/client'
+
 export type NegociacaoRow = {
   date: Date
   type: 'BUY' | 'SELL'
@@ -12,13 +14,17 @@ export type NegociacaoRow = {
 
 export type MovimentacaoRow = {
   date: Date
-  type: 'BUY' | 'DIVIDEND'
+  type: TransactionType
   ticker: string
   instituicao: string
   quantity: number
   price: number | null
   total: number | null
   referenceId: string
+  sourceMovementType: string
+  isIncoming: boolean
+  isTaxExempt: boolean
+  subscriptionDeadline: Date | null
 }
 
 export type MovimentacaoReviewRow = {
@@ -67,20 +73,24 @@ export type MovimentacaoParsedLine = {
   }
   normalized: {
     date: Date | null
-    type: 'BUY' | 'DIVIDEND' | null
+    type: TransactionType | null
     ticker: string
     instituicao: string
     quantity: number
     price: number | null
     total: number | null
     referenceId: string
+    sourceMovementType: string
+    isIncoming: boolean | null
+    isTaxExempt: boolean
+    subscriptionDeadline: Date | null
   }
 }
 
 export type PosicaoRow = {
   ticker: string
   name: string
-  category: 'STOCK' | 'FII' | 'ETF' | 'BDR'
+  category: 'STOCK' | 'FII' | 'ETF' | 'BDR' | 'FIXED_INCOME' | 'FUND'
   quantity: number
   closePrice: number
   updatedValue: number
@@ -131,5 +141,13 @@ export type RawSheet = {
 }
 
 export { inferAssetClass, parseNegociacao, parseNegociacaoRow, type InferredAssetClass } from './negociacao'
-export { parseMovimentacao, parseMovimentacaoDetailed, parseMovimentacaoForReview, parseMovimentacaoRow } from './movimentacao'
+export {
+  classifyMovement,
+  parseMovimentacao,
+  parseMovimentacaoDetailed,
+  parseMovimentacaoForReview,
+  parseMovimentacaoRow,
+  resolveAssetClass,
+  type AssetClass,
+} from './movimentacao'
 export { parsePosicao, parsePosicaoForReview, parsePosicaoRow } from './posicao'
