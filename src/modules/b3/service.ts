@@ -429,6 +429,18 @@ function normalizeDate(date: Date): string {
   return date.toISOString().slice(0, 10)
 }
 
+function extractAssetNameFromProduto(produto: string | undefined, fallbackTicker: string): string {
+  const raw = (produto ?? '').trim()
+  if (!raw) return fallbackTicker
+
+  const parts = raw.split(' - ').map((part) => part.trim()).filter(Boolean)
+  if (parts.length >= 2) {
+    return parts.slice(1).join(' - ')
+  }
+
+  return raw === fallbackTicker ? fallbackTicker : raw
+}
+
 function buildNegociacaoIdempotencyKey(row: ParsedRow): string {
   const raw = [
     row.ticker,
@@ -1428,6 +1440,7 @@ export async function confirmAndImportMovimentacaoForUser(
   userId: string,
   lines: MovimentacaoReviewLine[],
 ): Promise<ConfirmMovimentacaoResult> {
+  console.log(`IMPORT_B3_MOVIMENTACAO: ${lines.length} linhas confirmadas`)
   const clientId = await getOrCreateClientForUser(userId)
   let imported = 0
   let skipped = 0
@@ -1460,7 +1473,8 @@ export async function confirmAndImportMovimentacaoForUser(
 
       const resolution = await resolveImportAccountForInstitution(line.instituicao, clientId, prisma, line.conta)
       const category = inferCategoryFromTickerAndMarket(line.ticker)
-      const assetId = await upsertAssetFromImport(line.ticker, line.ticker, category)
+      const assetName = extractAssetNameFromProduto(line.original?.produto, line.ticker)
+      const assetId = await upsertAssetFromImport(line.ticker, assetName, category)
 
       const referenceId = line.referenceId?.trim()
         ? line.referenceId
@@ -1508,17 +1522,21 @@ export async function confirmAndImportMovimentacaoForUser(
     }
   }
 
-  await prisma.auditLog.create({
-    data: {
-      entityType: 'IMPORT_B3_MOVIMENTACAO',
-      entityId: 'batch-confirm',
-      action: 'CREATE',
-      previousValue: null,
-      newValue: JSON.stringify({ imported, skipped, reviewed: lines.length, errors, lines: lineAudit }),
-      changedBy: userId,
-      changedAt: new Date(),
-    },
-  })
+  try {
+    await prisma.auditLog.create({
+      data: {
+        entityType: 'IMPORT_B3_MOVIMENTACAO',
+        entityId: 'batch-confirm',
+        action: 'CREATE',
+        previousValue: null,
+        newValue: JSON.stringify({ imported, skipped, reviewed: lines.length, errors, lines: lineAudit }),
+        changedBy: userId,
+        changedAt: new Date(),
+      },
+    })
+  } catch (auditError) {
+    console.error('IMPORT_B3_MOVIMENTACAO: falha ao gravar AuditLog', auditError)
+  }
 
   for (const accountId of affectedAccountIds) {
     await positionsService.recalcPositions(accountId)
