@@ -146,3 +146,7 @@ Ao finalizar a subtarefa, responda sempre neste formato:
 - [dúvidas que surgiram ou decisões que precisam ser confirmadas]
 - [qualquer contexto adicional que o Reviewer deve considerar para revisar a subtarefa]
 ```
+## Regra obrigatoria de entrega
+- Toda alteracao implementada no repositorio deve ser finalizada com `git commit` e `git push` para o branch atual.
+- Apos push bem-sucedido, registrar no `memory/session-log.md` o hash curto do commit e um resumo de 1-2 linhas do que foi enviado.
+- Se houver falha de teste, conflito, falta de permissao ou erro de rede, tentar resolver automaticamente; se nao for possivel, registrar o bloqueio e solicitar orientacao.
