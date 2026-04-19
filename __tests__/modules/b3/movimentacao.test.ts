@@ -1,4 +1,4 @@
-import { parseMovimentacaoDetailed, parseMovimentacaoForReview, parseMovimentacaoRow } from '@/modules/b3/parser'
+import { parseMovimentacaoDetailed, parseMovimentacaoForReview, parseMovimentacaoRow, resolveAssetClass } from '@/modules/b3/parser'
 
 describe('parseMovimentacaoRow', () => {
   it('classifica rendimento como DIVIDEND', () => {
@@ -155,6 +155,74 @@ describe('parseMovimentacaoRow', () => {
     expect(resgateRendaFixa?.type).toBe('MATURITY')
     expect(resgateRendaFixa?.isIncoming).toBe(true)
     expect(resgateRendaFixa?.isTaxExempt).toBe(true)
+  })
+
+  it('classifica COMPRA de Tesouro Direto como BUY sem ambiguidade', () => {
+    const result = parseMovimentacaoRow([
+      'Credito',
+      '10/04/2026',
+      'Compra',
+      'Tesouro Prefixado com Juros Semestrais 2031',
+      'NU',
+      '1',
+      '1000',
+      '1000',
+    ])
+
+    expect(result?.type).toBe('BUY')
+    expect(result?.isIncoming).toBe(false)
+    expect(result?.isTaxExempt).toBe(false)
+  })
+
+  it('classifica COMPRA de CDB como BUY sem ambiguidade', () => {
+    const result = parseMovimentacaoRow([
+      'Credito',
+      '10/04/2026',
+      'Compra',
+      'CDB - CDB124661K5 - BANCO C6 CONSIGNADO S.A',
+      'NU',
+      '1000',
+      '1',
+      '1000',
+    ])
+
+    expect(result?.type).toBe('BUY')
+    expect(result?.isIncoming).toBe(false)
+    expect(result?.isTaxExempt).toBe(false)
+  })
+
+  it('classifica COMPRA de FII como BUY sem ambiguidade', () => {
+    const result = parseMovimentacaoRow([
+      'Credito',
+      '10/04/2026',
+      'Compra',
+      'MXRF11 - MAXI RENDA FDO INV IMOB - FII',
+      'BTG',
+      '10',
+      '10',
+      '100',
+    ])
+
+    expect(result?.type).toBe('BUY')
+    expect(result?.isIncoming).toBe(false)
+    expect(result?.isTaxExempt).toBe(false)
+  })
+
+  it('classifica COMPRA de acao como BUY sem ambiguidade', () => {
+    const result = parseMovimentacaoRow([
+      'Credito',
+      '10/04/2026',
+      'Compra',
+      'PETR4 - PETROBRAS',
+      'BTG',
+      '10',
+      '30',
+      '300',
+    ])
+
+    expect(result?.type).toBe('BUY')
+    expect(result?.isIncoming).toBe(false)
+    expect(result?.isTaxExempt).toBe(false)
   })
 
   it('classifica aplicacao e resgate antecipado de renda fixa como liquidacao', () => {
@@ -314,5 +382,23 @@ describe('parseMovimentacaoRow', () => {
 
     expect(result?.type).toBe('FRACTIONAL_AUCTION')
     expect(result?.isIncoming).toBe(true)
+  })
+})
+
+describe('resolveAssetClass', () => {
+  it('resolve Tesouro Direto como RENDA_FIXA', () => {
+    expect(resolveAssetClass('Tesouro Prefixado com Juros Semestrais 2031')).toBe('RENDA_FIXA')
+  })
+
+  it('resolve CDB como RENDA_FIXA', () => {
+    expect(resolveAssetClass('CDB - CDB124661K5 - BANCO C6 CONSIGNADO S.A')).toBe('RENDA_FIXA')
+  })
+
+  it('resolve ticker terminado em 11 como FII', () => {
+    expect(resolveAssetClass('MXRF11 - MAXI RENDA FDO INV IMOB - FII', 'MXRF11')).toBe('FII')
+  })
+
+  it('resolve ticker terminado em 3,4,5,6 como ACAO', () => {
+    expect(resolveAssetClass('PETR4 - PETROBRAS', 'PETR4')).toBe('ACAO')
   })
 })

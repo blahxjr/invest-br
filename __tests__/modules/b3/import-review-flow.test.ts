@@ -77,6 +77,16 @@ describe('fluxo de análise/revisão/confirmacao', () => {
     expect(result.imported).toBe(1)
     expect(result.skipped).toBe(1)
     expect(result.reviewed).toBe(2)
+
+    const importedLine = analysis.lines.find((line) => line.action === 'IMPORT')
+    expect(importedLine).toBeTruthy()
+
+    const importedAsset = await prisma.asset.findUnique({
+      where: { ticker: importedLine!.ticker },
+      select: { name: true },
+    })
+
+    expect(importedAsset?.name).toBe('TESTE')
   })
 
   it('posicao exige revisão de problemas e só persiste linhas válidas confirmadas', async () => {

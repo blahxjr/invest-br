@@ -5,6 +5,7 @@ import AccountCard from '@/components/AccountCard'
 
 describe('AccountCard', () => {
   const baseProps = {
+    accountId: 'acc-1',
     name: 'Corretora XP',
     type: 'BROKERAGE',
     balance: 8500.0,
@@ -38,8 +39,13 @@ describe('AccountCard', () => {
   })
 
   it('renderiza sem instituição e sem contagem', () => {
-    render(<AccountCard name="Conta Manual" type="BANK" balance={1000} />)
+    render(<AccountCard accountId="acc-2" name="Conta Manual" type="BANK" balance={1000} />)
     expect(screen.getByText('Conta Manual')).toBeInTheDocument()
     expect(screen.queryByText(/movimentações/)).not.toBeInTheDocument()
+  })
+
+  it('exibe link para editar conta', () => {
+    render(<AccountCard {...baseProps} />)
+    expect(screen.getByRole('link', { name: 'Editar conta' })).toHaveAttribute('href', '/accounts/acc-1/edit')
   })
 })
