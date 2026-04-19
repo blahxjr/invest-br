@@ -1,5 +1,12 @@
 # Session Log - 2026-04-17
+# Session Log - 2026-04-19
 
+## fix(import): encoding UTF-8 e datas B3 — commit 736711c
+
+- Corrigido `workbookFromArrayBuffer` para usar `TextDecoder('utf-8')` + `type:'string'` → resolve caracteres corrompidos (zero `tipo_movimentacao_desconhecido`)
+- Adicionada `fixWorksheetDateCells()` que detecta células numéricas com formato `m/d/yy` (datas brasileiras mal-interpretadas pelo XLSX como US format) e as reconverte para `dd/mm/yyyy` trocando mês ↔ dia
+- Aplicado em: `src/app/(app)/import/actions.ts`, `src/app/(app)/debug/import/actions.ts`, `scripts/diagnostico-import.ts`
+- Resultado: movimentação 100% OK (879/879), posição 100% OK (145/145)
 ## Escopo executado
 
 - Criado script temporario scripts/analyze-coverage.ts para cobertura de classifyMovement() com tipos unicos de movimentacao.
@@ -138,3 +145,14 @@
 
 - A importacao de movimentacao relatada pelo usuario nao ficou confirmada por evidencia persistida no banco ate esta verificacao.
 - Nao e seguro liberar a importacao da proxima planilha sem reproduzir ou localizar a execucao da movimentacao com trilha auditavel.
+
+---
+
+# Session Log - 2026-04-19
+
+## docs(memory): correcoes de encoding e parsing de datas no import B3
+
+- Atualizado `memory/current-state.md` com status consolidado do import B3: movimentacao 879/879 (100%) e posicao 145/145 (100%).
+- Registrado bugfix do commit `736711c`: leitura UTF-8 via `TextDecoder('utf-8')` + `XLSX.read(..., { type: 'string' })`.
+- Registrado bugfix de datas: uso de `fixWorksheetDateCells()` para corrigir auto-deteccao US (`m/d/yy`) em datas BR.
+- Adicionada decisao tecnica `DEC-018` em `memory/decisions.md`.

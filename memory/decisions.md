@@ -135,3 +135,18 @@
 - Fluxo prático: usuário baixa os CSVs do B3, seleciona todos de uma vez na UI e importa.
 - Arquivos com nomes não padronizados (sem padrão acoes/bdr/etf/fundos/rendafixa/tesourodireto) usam o próprio nome como sheetName.
 - Movimentação: UI alterada para aceitar `.csv` também (além de XLSX).
+
+## DEC-018 — Leitura de CSV B3 em UTF-8 com correção de datas auto-detectadas
+
+**Contexto:** CSVs B3 são UTF-8. O fluxo anterior usava `XLSX.read(buffer, { type: 'array' })`, o que levou a leitura Latin-1 e corrompeu acentos (`Transferência` -> `TransferÃªncia`). Além disso, o XLSX auto-detectou parte das datas `dd/mm/yyyy` como formato US (`m/d/yy`) quando `dd <= 12`, gerando serial numérico e falhas de parsing (`data_invalida`).
+
+**Decisão:**
+- Sempre decodificar o arquivo como UTF-8 string antes de enviar ao XLSX.
+- Padrão obrigatório no helper `workbookFromArrayBuffer`: `buffer -> TextDecoder('utf-8').decode -> XLSX.read(text, { type: 'string' })`.
+- Aplicar `fixWorksheetDateCells()` após leitura da worksheet para reconverter células numéricas formatadas como `m/d/yy` para `dd/mm/yyyy` (troca mês/dia no contexto BR).
+
+**Consequência:**
+- Parser de movimentação volta a reconhecer tipos com acentuação corretamente.
+- Datas deixam de cair em `data_invalida` por inversão mês/dia.
+- Resultado validado na sessão de 19/04/2026: movimentação 879/879 (100%) e posição 145/145 (100%).
+- Arquivos impactados: `src/app/(app)/import/actions.ts`, `src/app/(app)/debug/import/actions.ts`.

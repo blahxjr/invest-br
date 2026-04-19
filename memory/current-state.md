@@ -1,6 +1,6 @@
 # Estado atual do projeto
 
-**Última atualização:** 2026-04-19 (DEC-017 - suporte a múltiplos CSVs de posição B3)
+**Última atualização:** 2026-04-19 (DEC-018 - leitura UTF-8 e correção de datas no import B3)
 
 ## Prioridade V2 ativa (19/04/2026)
 
@@ -69,10 +69,15 @@ Arquivos-chave: src/modules/income/service.ts
 Contratos: createIncomeEvent, getIncomeEventsByAccount, getTotalIncomeByAccount, createRentalReceipt, getRentalReceiptsByAccount, calculatePositionByAsset, getPositionsByAccount
 
 ### Import B3
-Status: implementado com suporte a múltiplos CSVs (negociacao, movimentacao e posicao).
+Status: implementado com suporte a múltiplos CSVs (negociacao, movimentacao e posicao) e importacao validada em 100% para os arquivos reais da sessao.
 Arquivos-chave: src/modules/b3/parser/*.ts, src/modules/b3/service.ts, src/app/(app)/import/actions.ts
 Contratos: parseNegociacaoRow, parseMovimentacaoRow, parsePosicaoRow, persistNegociacao, persistMovimentacao, syncPosicao
 Nota (DEC-017): posição aceita 6 tipos de CSV da B3 (acoes, bdr, etf, fundos, rendafixa, tesourodireto), cada um com mapeamento de colunas específico. UI aceita múltiplos arquivos com `accept=".csv,.xlsx,.xls"`.
+Atualizacao 19/04 (commit 736711c):
+- Bug de encoding corrigido: leitura de CSV via UTF-8 com `TextDecoder('utf-8')` antes do `XLSX.read(..., { type: 'string' })`.
+- Bug de datas corrigido: `fixWorksheetDateCells()` reconverte datas auto-detectadas em formato US (`m/d/yy`) para padrao BR (`dd/mm/yyyy`).
+- Resultado validado: movimentacao 879/879 (100%, sem `tipo_movimentacao_desconhecido` e sem `data_invalida`) e posicao 145/145 (100%).
+- Pendencias antigas de encoding e datas invalidas no import de movimentacao foram resolvidas.
 
 ### Positions
 Status: v2 completo com enriquecimento de dados, dual view, filtros e alocacao baseada em valor de mercado.
@@ -193,10 +198,15 @@ Arquivos-chave: src/modules/income/service.ts
 Contratos: createIncomeEvent, getIncomeEventsByAccount, getTotalIncomeByAccount, createRentalReceipt, getRentalReceiptsByAccount, calculatePositionByAsset, getPositionsByAccount
 
 ### Import B3
-Status: implementado com suporte a múltiplos CSVs (negociacao, movimentacao e posicao).
+Status: implementado com suporte a múltiplos CSVs (negociacao, movimentacao e posicao) e importacao validada em 100% para os arquivos reais da sessao.
 Arquivos-chave: src/modules/b3/parser/*.ts, src/modules/b3/service.ts, src/app/(app)/import/actions.ts
 Contratos: parseNegociacaoRow, parseMovimentacaoRow, parsePosicaoRow, persistNegociacao, persistMovimentacao, syncPosicao
 Nota (DEC-017): posição aceita 6 tipos de CSV da B3 (acoes, bdr, etf, fundos, rendafixa, tesourodireto), cada um com mapeamento de colunas específico. UI aceita múltiplos arquivos com `accept=".csv,.xlsx,.xls"`.
+Atualizacao 19/04 (commit 736711c):
+- Bug de encoding corrigido: leitura de CSV via UTF-8 com `TextDecoder('utf-8')` antes do `XLSX.read(..., { type: 'string' })`.
+- Bug de datas corrigido: `fixWorksheetDateCells()` reconverte datas auto-detectadas em formato US (`m/d/yy`) para padrao BR (`dd/mm/yyyy`).
+- Resultado validado: movimentacao 879/879 (100%, sem `tipo_movimentacao_desconhecido` e sem `data_invalida`) e posicao 145/145 (100%).
+- Pendencias antigas de encoding e datas invalidas no import de movimentacao foram resolvidas.
 
 ### Positions
 Status: v2 completo com enriquecimento de dados, dual view, filtros e alocacao baseada em valor de mercado (P18).
