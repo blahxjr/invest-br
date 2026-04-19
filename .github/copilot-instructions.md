@@ -108,8 +108,9 @@ src/
 - Tipos: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `security`
 - Exemplos: `feat(transactions): adicionar cálculo de custo médio ponderado`
 - Uma feature por branch: `feat/nome-da-feature` ou `fix/nome-do-bug`
-- Política de automação: após implementar uma tarefa, se os testes relevantes estiverem verdes e não houver bloqueios de revisão, o agente deve executar commit e `git push` automaticamente para o branch atual.
-- Em caso de teste falhando, conflito ou dúvida de impacto, o agente não deve fazer push automático; deve registrar pendência e aguardar orientação.
+- Política mandatória: toda alteração implementada deve terminar com `git commit` e `git push` para o branch atual, enviando as mudanças ao GitHub.
+- Em caso de falha de teste, conflito, ausência de permissão de push ou erro de rede, o agente deve tentar resolver automaticamente; se não for possível, deve registrar o bloqueio de forma objetiva e solicitar orientação.
+- Não deixar alterações implementadas apenas localmente sem tentativa explícita de push na mesma execução da tarefa.
 
 ---
 
