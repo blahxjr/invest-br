@@ -1,11 +1,22 @@
 "use client"
 
 import { useState } from 'react'
+import { usePathname } from 'next/navigation'
 import { Menu, X, TrendingUp } from 'lucide-react'
 import Sidebar from '@/components/Sidebar'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false)
+  const pathname = usePathname()
+  const isDebugImportRoute = pathname?.startsWith('/debug/import')
+
+  if (isDebugImportRoute) {
+    return (
+      <main className="min-h-screen bg-gray-50">
+        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 sm:py-8">{children}</div>
+      </main>
+    )
+  }
 
   return (
     <div className="flex min-h-screen">
