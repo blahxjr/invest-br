@@ -662,6 +662,47 @@ export type UpdateIssuesResponse = {
   error?: string
 }
 
+export type DebugAuditLogRow = {
+  id: string
+  source: string
+  action: string
+  entity: string
+  timestamp: string
+  userId: string | null
+}
+
+export type DebugTransactionRow = {
+  id: string
+  accountId: string
+  type: string
+  quantity: string | null
+  price: string | null
+  total: string
+  notes: string | null
+  createdAt: string
+}
+
+export type DebugLedgerRow = {
+  id: string
+  accountId: string
+  balanceBefore: string
+  balanceAfter: string
+  entryType: string
+  timestamp: string
+}
+
+export type DebugResultsSnapshotResponse = {
+  auditLogs: DebugAuditLogRow[]
+  transactions: DebugTransactionRow[]
+  ledger: DebugLedgerRow[]
+  summary: {
+    positionsRecalculated: number
+    errorsFound: number
+    acceptedRecords: number
+    totalRecords: number
+  }
+}
+
 /**
  * Faz append de novos issues em memory/import-debug/issues-open.md.
  * Cada string do array vira um item de lista no arquivo.
@@ -704,5 +745,135 @@ export async function updateIssuesOpen(
       appended: 0,
       error: error instanceof Error ? error.message : 'Erro ao gravar issues',
     }
+  }
+}
+
+/**
+ * Retorna snapshot recente para visualizacao de AuditLog, Transaction e Ledger.
+ */
+export async function getDebugResultsSnapshot(): Promise<DebugResultsSnapshotResponse> {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return {
+      auditLogs: [],
+      transactions: [],
+      ledger: [],
+      summary: {
+        positionsRecalculated: 0,
+        errorsFound: 0,
+        acceptedRecords: 0,
+        totalRecords: 0,
+      },
+    }
+  }
+
+  const userId = session.user.id
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000)
+
+  const [auditLogsRaw, transactionsRaw, ledgerRaw] = await Promise.all([
+    prisma.auditLog.findMany({
+      where: {
+        changedAt: { gte: oneHourAgo },
+      },
+      orderBy: { changedAt: 'desc' },
+      take: 50,
+      select: {
+        id: true,
+        entityType: true,
+        action: true,
+        changedAt: true,
+        changedBy: true,
+      },
+    }),
+    prisma.transaction.findMany({
+      where: {
+        createdAt: { gte: oneHourAgo },
+        account: { client: { userId } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: {
+        id: true,
+        accountId: true,
+        type: true,
+        quantity: true,
+        price: true,
+        totalAmount: true,
+        notes: true,
+        createdAt: true,
+        assetId: true,
+      },
+    }),
+    prisma.ledgerEntry.findMany({
+      where: {
+        createdAt: { gte: oneHourAgo },
+        account: { client: { userId } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: {
+        id: true,
+        accountId: true,
+        debit: true,
+        credit: true,
+        balanceAfter: true,
+        createdAt: true,
+      },
+    }),
+  ])
+
+  const auditLogs: DebugAuditLogRow[] = auditLogsRaw.map((row) => ({
+    id: row.id,
+    source: row.entityType.includes('IMPORT_B3') ? 'B3' : 'Sistema',
+    action: row.action,
+    entity: row.entityType,
+    timestamp: row.changedAt.toISOString(),
+    userId: row.changedBy,
+  }))
+
+  const transactions: DebugTransactionRow[] = transactionsRaw.map((row) => ({
+    id: row.id,
+    accountId: row.accountId,
+    type: String(row.type),
+    quantity: row.quantity?.toString() ?? null,
+    price: row.price?.toString() ?? null,
+    total: row.totalAmount.toString(),
+    notes: row.notes,
+    createdAt: row.createdAt.toISOString(),
+  }))
+
+  const ledger: DebugLedgerRow[] = ledgerRaw.map((row) => {
+    const debit = Number(row.debit?.toString() ?? '0')
+    const credit = Number(row.credit?.toString() ?? '0')
+    const after = Number(row.balanceAfter.toString())
+    const before = after + debit - credit
+
+    return {
+      id: row.id,
+      accountId: row.accountId,
+      balanceBefore: before.toFixed(2),
+      balanceAfter: row.balanceAfter.toString(),
+      entryType: debit > 0 ? 'DEBIT' : credit > 0 ? 'CREDIT' : 'NEUTRAL',
+      timestamp: row.createdAt.toISOString(),
+    }
+  })
+
+  const positionsRecalculated = new Set(
+    transactionsRaw.map((row) => row.assetId).filter((id): id is string => Boolean(id)),
+  ).size
+  const errorsFound = auditLogs.filter((row) => row.action.toUpperCase().includes('ERROR')).length
+  const acceptedRecords = transactions.length + ledger.length
+  const totalRecords = acceptedRecords + errorsFound
+
+  return {
+    auditLogs,
+    transactions,
+    ledger,
+    summary: {
+      positionsRecalculated,
+      errorsFound,
+      acceptedRecords,
+      totalRecords,
+    },
   }
 }
