@@ -156,3 +156,5 @@
 - Registrado bugfix do commit `736711c`: leitura UTF-8 via `TextDecoder('utf-8')` + `XLSX.read(..., { type: 'string' })`.
 - Registrado bugfix de datas: uso de `fixWorksheetDateCells()` para corrigir auto-deteccao US (`m/d/yy`) em datas BR.
 - Adicionada decisao tecnica `DEC-018` em `memory/decisions.md`.
+- Commit enviado: `5d11909`.
+- Resumo do envio: documentacao de estado + decisao tecnica do import B3 atualizadas e publicadas no branch atual.
