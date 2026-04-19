@@ -29,22 +29,9 @@ export async function resetImportData(): Promise<ResetImportDataResult> {
     where: { ticker: { not: null } },
   }).then((result) => result.count)
 
-  const classesWithAssets = await prisma.assetClass.findMany({
-    where: {
-      assets: {
-        some: {},
-      },
-    },
-    select: { id: true },
-  })
-
-  const assetClassesDeleted = await prisma.assetClass.deleteMany({
-    where: {
-      id: {
-        notIn: classesWithAssets.map((assetClass) => assetClass.id),
-      },
-    },
-  }).then((result) => result.count)
+  // AssetClasses são dados de catálogo/referência e NÃO devem ser deletados no reset.
+  // Deletá-las causaria falha em todas as importações subsequentes.
+  const assetClassesDeleted = 0
 
   return {
     auditLogsDeleted,

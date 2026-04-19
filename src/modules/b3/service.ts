@@ -532,16 +532,32 @@ function ensureDate(value: Date | string): Date {
   return new Date(value)
 }
 
-async function getAssetClassIdByCategory(category: PosicaoRow['category']): Promise<string> {
-  const code = category === 'ETF' ? 'ETF' : category === 'FII' ? 'FII' : 'ACOES'
+/** Mapeamento de categoria para código de AssetClass no banco. */
+const CATEGORY_TO_CLASS_CODE: Record<PosicaoRow['category'], { code: string; name: string; description: string }> = {
+  STOCK: { code: 'ACOES', name: 'Ações', description: 'Ações de empresas listadas na B3' },
+  FII: { code: 'FII', name: 'Fundos Imobiliários', description: 'FIIs negociados na B3' },
+  ETF: { code: 'ETF', name: 'ETFs', description: 'Fundos de índice negociados em bolsa' },
+  BDR: { code: 'BDR', name: 'BDRs', description: 'Brazilian Depositary Receipts' },
+  FIXED_INCOME: { code: 'RENDA_FIXA', name: 'Renda Fixa', description: 'Títulos de renda fixa (Tesouro, CDB, LCI, LCA etc.)' },
+  FUND: { code: 'FII', name: 'Fundos Imobiliários', description: 'FIIs negociados na B3' },
+}
 
-  const assetClass = await prisma.assetClass.findUnique({
-    where: { code },
+/**
+ * Busca ou cria a AssetClass correspondente à categoria do ativo.
+ * Garante que as classes de referência sempre existam no banco.
+ */
+async function getAssetClassIdByCategory(category: PosicaoRow['category']): Promise<string> {
+  const meta = CATEGORY_TO_CLASS_CODE[category] ?? CATEGORY_TO_CLASS_CODE.STOCK
+
+  const assetClass = await prisma.assetClass.upsert({
+    where: { code: meta.code },
+    update: {},
+    create: { code: meta.code, name: meta.name, description: meta.description },
     select: { id: true },
   })
 
   if (!assetClass) {
-    throw new Error(`Classe de ativo nao encontrada para codigo ${code}`)
+    throw new Error(`Falha ao obter/criar classe de ativo para codigo ${meta.code}`)
   }
 
   return assetClass.id

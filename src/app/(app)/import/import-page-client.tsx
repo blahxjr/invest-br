@@ -1627,12 +1627,30 @@ function MovimentacaoWizardCard() {
       )}
 
       {step === 4 && result && (
-        <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800 text-sm">
+        <div
+          className={[
+            'mt-4 rounded-xl border p-4 text-sm',
+            result.errors.length > 0
+              ? 'border-amber-200 bg-amber-50 text-amber-900'
+              : 'border-emerald-200 bg-emerald-50 text-emerald-800',
+          ].join(' ')}
+        >
           <p className="font-semibold">Importação de movimentação concluída</p>
           <p>Importadas: {result.imported}</p>
           <p>Ignoradas: {result.skipped}</p>
           <p>Revisadas: {result.reviewed}</p>
-          {result.errors.length > 0 && <p>Erros: {result.errors.length}</p>}
+          {result.errors.length > 0 && (
+            <details className="mt-2">
+              <summary className="cursor-pointer font-medium text-amber-800">
+                Erros: {result.errors.length} — clique para ver detalhes
+              </summary>
+              <ul className="mt-2 space-y-1 text-xs text-amber-800">
+                {result.errors.map((err, i) => (
+                  <li key={i} className="rounded bg-amber-100 px-2 py-1 font-mono">{err}</li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
       )}
 
@@ -1780,12 +1798,30 @@ function PosicaoWizardCard() {
       )}
 
       {step === 4 && result && (
-        <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800 text-sm">
+        <div
+          className={[
+            'mt-4 rounded-xl border p-4 text-sm',
+            result.errors.length > 0
+              ? 'border-amber-200 bg-amber-50 text-amber-900'
+              : 'border-emerald-200 bg-emerald-50 text-emerald-800',
+          ].join(' ')}
+        >
           <p className="font-semibold">Importação de posição concluída</p>
           <p>Sincronizadas: {result.upserted}</p>
           <p>Ignoradas: {result.skipped}</p>
           <p>Revisadas: {result.reviewed}</p>
-          {result.errors.length > 0 && <p>Erros: {result.errors.length}</p>}
+          {result.errors.length > 0 && (
+            <details className="mt-2">
+              <summary className="cursor-pointer font-medium text-amber-800">
+                Erros: {result.errors.length} — clique para ver detalhes
+              </summary>
+              <ul className="mt-2 space-y-1 text-xs text-amber-800">
+                {result.errors.map((err, i) => (
+                  <li key={i} className="rounded bg-amber-100 px-2 py-1 font-mono">{err}</li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
       )}
 
