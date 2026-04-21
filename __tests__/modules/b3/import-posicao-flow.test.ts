@@ -62,14 +62,21 @@ afterAll(async () => {
   await prisma.$disconnect()
 })
 
-function buildRow(input: { ticker: string; instituicao: string; conta?: string }) {
+function buildRow(input: {
+  ticker: string
+  instituicao: string
+  conta?: string
+  quantity?: number
+  closePrice?: number
+  updatedValue?: number
+}) {
   return {
     ticker: input.ticker,
     name: `${input.ticker} TESTE`,
     category: 'STOCK' as const,
-    quantity: 10,
-    closePrice: 12.5,
-    updatedValue: 125,
+    quantity: input.quantity ?? 10,
+    closePrice: input.closePrice ?? 12.5,
+    updatedValue: input.updatedValue ?? 125,
     instituicao: input.instituicao,
     conta: input.conta ?? 'Conta Posição',
   }

@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { prisma } from '@/lib/prisma'
 import * as positionsService from '@/modules/positions/service'
 import { createTransaction } from '@/modules/transactions/service'
+import { getCanonicalAssetClassMeta, normalizeInstitutionName as normalizeInstitutionNameFn } from './normalization'
 import {
   inferAssetClass,
   type InferredAssetClass,
@@ -13,6 +14,9 @@ import {
   type PosicaoParsedLine,
   type PosicaoRow,
 } from './parser'
+
+// Re-export for backward compatibility with tests
+export const normalizeInstitutionName = normalizeInstitutionNameFn
 
 export type ImportResult = {
   imported?: number
@@ -336,17 +340,6 @@ function toDbCategoryFromClassCode(code: string): DbCategory {
 }
 
 /**
- * Normaliza o nome da instituição para comparação e upsert.
- */
-export function normalizeInstitutionName(raw: string): string {
-  const trimmed = raw.trim().toUpperCase()
-  if (!trimmed) {
-    throw new Error('Nome de instituição vazio')
-  }
-  return trimmed
-}
-
-/**
  * Infere o tipo da instituição com base no nome informado.
  */
 export function inferInstitutionType(name: string): InstitutionType {
@@ -402,7 +395,7 @@ function normalizeAccountName(accountName: string | null | undefined, institutio
 }
 
 function buildInstitutionAccountKey(institutionName: string, accountName: string): string {
-  return `${normalizeInstitutionName(institutionName)}|${normalizeAccountName(accountName, institutionName)}`
+  return `${normalizeInstitutionNameFn(institutionName)}|${normalizeAccountName(accountName, institutionName)}`
 }
 
 function institutionTypeToPtBr(type: InstitutionType): InstitutionPreview['inferredType'] {
@@ -655,7 +648,7 @@ export async function getOrCreateDefaultPortfolioForUser(userId: string, tx: TxC
  * Garante a existência de uma instituição pelo nome normalizado.
  */
 export async function upsertInstitution(name: string, tx: TxClient): Promise<string> {
-  const normalized = normalizeInstitutionName(name)
+  const normalized = normalizeInstitutionNameFn(name)
   const existing = await tx.institution.findFirst({
     where: { name: normalized },
     select: { id: true },
@@ -721,7 +714,7 @@ export async function resolveImportAccountForInstitution(
   accountName?: string,
   portfolioId?: string,
 ): Promise<ImportAccountResolution> {
-  const normalizedName = normalizeInstitutionName(institutionName)
+  const normalizedName = normalizeInstitutionNameFn(institutionName)
   const normalizedAccountName = normalizeAccountName(accountName, normalizedName)
 
   const existingInstitution = await tx.institution.findFirst({
@@ -886,7 +879,7 @@ export async function analyzeNegociacaoRows(rows: NegociacaoRow[], userId?: stri
       parsedRows
         .map((row) => row.instituicao)
         .filter((value): value is string => Boolean(value?.trim()))
-        .map((value) => normalizeInstitutionName(value)),
+        .map((value) => normalizeInstitutionNameFn(value)),
     ),
   )
 
@@ -990,7 +983,7 @@ export async function analyzeNegociacaoRows(rows: NegociacaoRow[], userId?: stri
 
   for (const row of parsedRows) {
     if (!row.instituicao?.trim()) continue
-    const normalized = normalizeInstitutionName(row.instituicao)
+    const normalized = normalizeInstitutionNameFn(row.instituicao)
     institutionRowCount.set(normalized, (institutionRowCount.get(normalized) ?? 0) + 1)
   }
 
@@ -1032,7 +1025,7 @@ export async function analyzeNegociacaoRows(rows: NegociacaoRow[], userId?: stri
             .sort((left, right) => left.localeCompare(right))
         : []
 
-      const rowsForInstitution = parsedRows.filter((row) => normalizeInstitutionName(row.instituicao) === normalizedName)
+      const rowsForInstitution = parsedRows.filter((row) => normalizeInstitutionNameFn(row.instituicao) === normalizedName)
       const rowsWithExplicitAccountCount = rowsForInstitution.filter((row) => Boolean(row.conta?.trim())).length
       const rowsWithoutAccountCount = rowsForInstitution.length - rowsWithExplicitAccountCount
       const autoFillStrategy = existingInstitutionAccounts.length === 1
@@ -1119,7 +1112,7 @@ export async function confirmAndImportNegociacaoForUser(
       rowsToImport
         .map((row) => row.instituicao)
         .filter((value): value is string => Boolean(value?.trim()))
-        .map((value) => normalizeInstitutionName(value)),
+        .map((value) => normalizeInstitutionNameFn(value)),
     ),
   )
 
@@ -1130,7 +1123,7 @@ export async function confirmAndImportNegociacaoForUser(
     let accountsCreated = 0
 
     for (const instName of uniqueInstitutions) {
-      const rowsForInstitution = rowsToImport.filter((row) => normalizeInstitutionName(row.instituicao) === instName)
+      const rowsForInstitution = rowsToImport.filter((row) => normalizeInstitutionNameFn(row.instituicao) === instName)
       const accountNames = Array.from(new Set(rowsForInstitution.map((row) => normalizeAccountName(row.conta, instName))))
 
       for (const accountName of accountNames) {
@@ -1270,7 +1263,7 @@ export async function confirmAndImportNegociacaoForUser(
     }>()
 
     for (const row of rowsToImport) {
-      const normalizedInst = normalizeInstitutionName(row.instituicao ?? '')
+      const normalizedInst = normalizeInstitutionNameFn(row.instituicao ?? '')
       const rowAccountId = accountByInstitutionAndName.get(buildInstitutionAccountKey(normalizedInst, row.conta ?? ''))
       if (!rowAccountId) {
         throw new Error(`Conta não encontrada para ${row.instituicao}`)
@@ -1460,7 +1453,7 @@ export async function analyzeMovimentacaoRows(
       parsedLines
         .map((line) => line.normalized.instituicao)
         .filter((value): value is string => Boolean(value?.trim()))
-        .map((value) => normalizeInstitutionName(value)),
+        .map((value) => normalizeInstitutionNameFn(value)),
     ),
   )
 
@@ -1530,7 +1523,7 @@ export async function analyzeMovimentacaoRows(
   const institutionRowCount = new Map<string, number>()
   for (const line of lines) {
     if (!line.instituicao?.trim()) continue
-    const normalizedInstitution = normalizeInstitutionName(line.instituicao)
+    const normalizedInstitution = normalizeInstitutionNameFn(line.instituicao)
     institutionRowCount.set(normalizedInstitution, (institutionRowCount.get(normalizedInstitution) ?? 0) + 1)
   }
 
@@ -1554,7 +1547,7 @@ export async function analyzeMovimentacaoRows(
 
       const rowsForInstitution = lines.filter((line) => {
         if (!line.instituicao?.trim()) return false
-        return normalizeInstitutionName(line.instituicao) === normalizedName
+        return normalizeInstitutionNameFn(line.instituicao) === normalizedName
       })
       const rowsWithExplicitAccountCount = rowsForInstitution.filter((line) => Boolean(line.conta?.trim())).length
       const rowsWithoutAccountCount = rowsForInstitution.length - rowsWithExplicitAccountCount

@@ -36,6 +36,7 @@ const mocks = vi.hoisted(() => {
     tx,
     prisma: {
       client: { findFirst: vi.fn() },
+      portfolio: { findFirst: vi.fn(), create: vi.fn() },
       auditLog: { create: vi.fn() },
       $transaction: vi.fn(),
     },
@@ -96,6 +97,7 @@ describe('confirmAndImportNegociacaoForUser batch', () => {
     vi.clearAllMocks()
 
     mocks.prisma.client.findFirst.mockResolvedValue({ id: 'client-1' })
+    mocks.prisma.portfolio.findFirst.mockResolvedValue({ id: 'portfolio-1' })
 
     mocks.prisma.$transaction.mockImplementation(async (callback, options) => {
       return callback(mocks.tx, options)

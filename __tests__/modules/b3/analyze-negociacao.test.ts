@@ -31,7 +31,7 @@ describe('analyzeNegociacaoRows metadata', () => {
 
   it('retorna missingClasses quando AssetClass ETF nao existe no banco', async () => {
     vi.spyOn(prisma.assetClass, 'findMany').mockResolvedValue([
-      { id: 'class-fii', name: 'Fundos Imobiliarios', code: 'FII' },
+      { id: 'class-fii', name: 'Fundos Imobiliários', code: 'FII' },
       { id: 'class-acoes', name: 'Acoes', code: 'ACOES' },
     ] as never)
 
@@ -60,7 +60,7 @@ describe('analyzeNegociacaoRows metadata', () => {
 
   it('retorna availableClasses e existingAssets para o combobox de associação', async () => {
     vi.spyOn(prisma.assetClass, 'findMany').mockResolvedValue([
-      { id: 'class-fii', name: 'Fundos Imobiliarios', code: 'FII' },
+      { id: 'class-fii', name: 'Fundos Imobiliários', code: 'FII' },
     ] as never)
 
     vi.spyOn(prisma.asset, 'findMany')
@@ -70,7 +70,7 @@ describe('analyzeNegociacaoRows metadata', () => {
           id: 'asset-1',
           ticker: 'HGLG11',
           name: 'CSHG Logistica',
-          assetClass: { name: 'Fundos Imobiliarios' },
+          assetClass: { name: 'Fundos Imobiliários' },
         },
       ] as never)
 
@@ -89,14 +89,14 @@ describe('analyzeNegociacaoRows metadata', () => {
     ])
 
     expect(result.availableClasses).toEqual([
-      { id: 'class-fii', name: 'Fundos Imobiliarios', code: 'FII' },
+      { id: 'class-fii', name: 'Fundos Imobiliários', code: 'FII' },
     ])
     expect(result.existingAssets).toEqual([
       {
         id: 'asset-1',
         ticker: 'HGLG11',
         name: 'CSHG Logistica',
-        className: 'Fundos Imobiliarios',
+        className: 'Fundos Imobiliários',
       },
     ])
   })
