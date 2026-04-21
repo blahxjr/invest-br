@@ -1,6 +1,6 @@
 # Módulo: Cotações
 
-**Última atualização:** 2026-04-13 (Prompt 11)
+**Última atualização:** 2026-04-21
 
 ## Visão Geral
 
@@ -175,3 +175,12 @@ Documentada em `run.md` como opcional.
 - Gráfico de evolução de patrimônio no tempo
 - Alertas de preço
 - WebSocket / atualizacão sub-segundo
+
+---
+
+## Evolução Planejada (V2)
+
+Para evolução de cotações em arquitetura multi-provider com fallback resiliente e trilha para near-real-time:
+
+- Plano técnico: `docs/architecture/market-data-implementation-plan.md`
+- ADR proposta: `docs/decisions/ADR-002-market-data-provider-strategy.md`
