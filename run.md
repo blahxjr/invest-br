@@ -26,6 +26,9 @@ Crie um arquivo `.env.local` na raiz do projeto com:
 DATABASE_URL=postgresql://USUARIO:SENHA@localhost:5432/investbr
 AUTH_SECRET=sua_chave_bem_grande_e_aleatoria
 BRAPI_TOKEN=seu_token_opcional_da_brapi
+QUOTE_PROVIDER_PRIMARY=brapi
+QUOTE_PROVIDER_FALLBACKS=yahoo
+YAHOO_ENABLED=false
 EMAIL_SERVER_HOST=localhost
 EMAIL_SERVER_PORT=1025
 EMAIL_FROM=noreply@investbr.local
@@ -41,6 +44,9 @@ EMAIL_SERVER_PASSWORD=sua_senha
 Observacao:
 - O projeto le `EMAIL_SERVER_PASSWORD` (nao `EMAIL_SERVER_PASS`).
 - `BRAPI_TOKEN` e opcional. Sem token as cotacoes continuam funcionando, com limite de requisicoes menor.
+- `QUOTE_PROVIDER_PRIMARY` define o provider principal de cotacao (padrao: `brapi`).
+- `QUOTE_PROVIDER_FALLBACKS` define fallback em ordem por lista separada por virgula (ex.: `yahoo`).
+- `YAHOO_ENABLED` controla ativacao do fallback Yahoo (`true`/`false`).
 
 ## 4) Instalar dependencias
 
