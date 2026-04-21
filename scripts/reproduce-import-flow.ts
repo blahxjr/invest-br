@@ -209,7 +209,7 @@ async function runDashboard(): Promise<boolean> {
     assetCount: summary.assetCount,
     monthlyIncome: summary.monthlyIncome.toString(),
     topPositions: summary.topPositions.map((p) => ({ ticker: p.ticker, qty: p.quantity })),
-    allocationByClass: summary.allocationByClass.map((a) => ({ class: a.className ?? a.assetClassCode, pct: a.allocationPct })),
+    allocationByClass: summary.allocationByClass.map((a) => ({ class: a.className, pct: a.pct })),
   })
 
   if (summary.assetCount < 1) {

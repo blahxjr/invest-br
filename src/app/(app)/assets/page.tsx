@@ -1,31 +1,9 @@
+
 import { Suspense } from 'react'
 import { Plus, Tag } from 'lucide-react'
-import Link from 'next/link'
 import { prisma } from '@/lib/prisma'
-
-const categoryLabels: Record<string, string> = {
-  STOCK: 'Ação',
-  FII: 'FII',
-  ETF: 'ETF',
-  FIXED_INCOME: 'Renda Fixa',
-  FUND: 'Fundo',
-  CRYPTO: 'Cripto',
-  METAL: 'Metal',
-  REAL_ESTATE: 'Imóvel',
-  CASH: 'Caixa',
-}
-
-const categoryColors: Record<string, string> = {
-  STOCK: 'bg-blue-50 text-blue-700',
-  FII: 'bg-green-50 text-green-700',
-  ETF: 'bg-purple-50 text-purple-700',
-  FIXED_INCOME: 'bg-yellow-50 text-yellow-700',
-  FUND: 'bg-orange-50 text-orange-700',
-  CRYPTO: 'bg-pink-50 text-pink-700',
-  METAL: 'bg-gray-50 text-gray-700',
-  REAL_ESTATE: 'bg-teal-50 text-teal-700',
-  CASH: 'bg-emerald-50 text-emerald-700',
-}
+import { getCanonicalAssetClassMeta } from '@/modules/b3/normalization'
+import { AssetClassList } from '@/components/AssetClassList'
 
 async function AssetsContent() {
   const assetClasses = await prisma.assetClass.findMany({
@@ -35,7 +13,48 @@ async function AssetsContent() {
     orderBy: { name: 'asc' },
   })
 
-  const totalAssets = assetClasses.reduce((s, c) => s + c.assets.length, 0)
+  // Deduplicate by semantic key
+  const classBySemanticKey = new Map<
+    string,
+    { class: (typeof assetClasses)[0]; allAssets: (typeof assetClasses)[0]['assets'] }
+  >()
+
+  for (const cls of assetClasses) {
+    const canonical = getCanonicalAssetClassMeta({
+      code: cls.code,
+      name: cls.name,
+    })
+
+    const semanticKey = canonical?.semanticKey ?? cls.id
+    const existing = classBySemanticKey.get(semanticKey)
+
+    if (!existing) {
+      classBySemanticKey.set(semanticKey, {
+        class: cls,
+        allAssets: [...cls.assets],
+      })
+    } else {
+      // Merge assets from duplicate class into canonical
+      existing.allAssets.push(...cls.assets)
+      // Keep the class with code if available
+      if (cls.code && !existing.class.code) {
+        existing.class = cls
+      } else if (!existing.class.code && !cls.code && cls.createdAt < existing.class.createdAt) {
+        // Keep older class if both have no code
+        existing.class = cls
+      }
+    }
+  }
+
+  // Convert to array and sort
+  const deduplicatedClasses = Array.from(classBySemanticKey.values())
+    .map((entry) => ({
+      ...entry.class,
+      assets: entry.allAssets.sort((a, b) => (a.ticker ?? '').localeCompare(b.ticker ?? '')),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  const totalAssets = deduplicatedClasses.reduce((s, c) => s + c.assets.length, 0)
 
   return (
     <>
@@ -43,66 +62,17 @@ async function AssetsContent() {
         <Tag size={18} className="text-blue-600" />
         <div>
           <p className="text-sm font-medium text-gray-900">{totalAssets} ativos cadastrados</p>
-          <p className="text-xs text-gray-500">{assetClasses.length} classes de ativos</p>
+          <p className="text-xs text-gray-500">{deduplicatedClasses.length} classes de ativos</p>
         </div>
       </div>
 
-      {assetClasses.length === 0 ? (
+      {deduplicatedClasses.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
           <p className="text-gray-500 mb-2">Nenhum ativo encontrado.</p>
           <p className="text-sm text-gray-400">Execute o seed para popular o catálogo.</p>
         </div>
       ) : (
-        <div className="space-y-6">
-          {assetClasses.map((cls) => (
-            <div key={cls.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-                <div>
-                  <h3 className="font-semibold text-gray-900">{cls.name}</h3>
-                  {cls.description && (
-                    <p className="text-xs text-gray-500 mt-0.5">{cls.description}</p>
-                  )}
-                </div>
-                <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-                  {cls.assets.length} ativos
-                </span>
-              </div>
-
-              {cls.assets.length === 0 ? (
-                <p className="px-5 py-4 text-sm text-gray-400">
-                  Nenhum ativo nesta classe.
-                </p>
-              ) : (
-                <div className="divide-y divide-gray-50">
-                  {cls.assets.map((asset) => (
-                    <div
-                      key={asset.id}
-                      className="px-5 py-3 flex items-center justify-between hover:bg-gray-50 cursor-pointer transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        {asset.ticker && (
-                          <span className="font-bold text-gray-900 w-20 text-sm">
-                            {asset.ticker}
-                          </span>
-                        )}
-                        <span className="text-sm text-gray-600">{asset.name}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                            categoryColors[asset.category] ?? 'bg-gray-100 text-gray-600'
-                          }`}
-                        >
-                          {categoryLabels[asset.category] ?? asset.category}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+        <AssetClassList assetClasses={deduplicatedClasses} />
       )}
     </>
   )
