@@ -2,7 +2,8 @@ import type { ProviderQuote, QuoteProvider } from '@/modules/quotes/domain/types
 
 const DEFAULT_TIMEOUT_MS = 6000
 const DEFAULT_CONCURRENCY = 5
-const MIN_SUPPORTED_NODE_MAJOR = 22
+const MIN_SUPPORTED_NODE_MAJOR = 20
+const RECOMMENDED_NODE_MAJOR = 22
 
 type YahooQuoteLike = {
   symbol?: string
@@ -22,6 +23,11 @@ function normalizeTicker(ticker: string): string {
 function isNodeVersionSupported(): boolean {
   const major = Number.parseInt(process.versions.node.split('.')[0] ?? '0', 10)
   return major >= MIN_SUPPORTED_NODE_MAJOR
+}
+
+function isNodeVersionRecommended(): boolean {
+  const major = Number.parseInt(process.versions.node.split('.')[0] ?? '0', 10)
+  return major >= RECOMMENDED_NODE_MAJOR
 }
 
 function isFeatureEnabled(value: string | undefined): boolean {
@@ -117,6 +123,7 @@ async function mapWithConcurrency<TInput, TOutput>(
 
 let yahooClientPromise: Promise<YahooClient> | null = null
 let hasLoggedUnsupportedNodeWarning = false
+let hasLoggedNonRecommendedNodeWarning = false
 
 async function getYahooClient(): Promise<YahooClient> {
   if (!yahooClientPromise) {
@@ -165,6 +172,13 @@ export const yahooProvider: QuoteProvider = {
         )
       }
       return new Map()
+    }
+
+    if (process.env.NODE_ENV !== 'test' && !isNodeVersionRecommended() && !hasLoggedNonRecommendedNodeWarning) {
+      hasLoggedNonRecommendedNodeWarning = true
+      console.warn(
+        `[quotes] Yahoo provider em modo compatibilidade: Node ${process.versions.node}. Recomendado >= ${RECOMMENDED_NODE_MAJOR}.`,
+      )
     }
 
     const uniqueTickers = Array.from(new Set(tickers.map(normalizeTicker).filter(Boolean)))
