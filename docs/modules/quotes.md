@@ -1,10 +1,15 @@
 # Módulo: Cotações
 
-**Última atualização:** 2026-04-21
+**Última atualização:** 2026-04-21 (Fase 1 multi-provider)
 
 ## Visão Geral
 
-Integração com [Brapi.dev](https://brapi.dev) para buscar preços atuais dos ativos da carteira. Enriquece `Position` com `currentPrice`, `currentValue`, `gainLoss`, `gainLossPercent` e `quoteChangePct`. Nunca quebra a aplicação em caso de falha da API externa.
+Integração de cotações em arquitetura multi-provider com fallback resiliente:
+
+- Primário: Brapi
+- Fallback opcional: Yahoo Finance (via `yahoo-finance2`)
+
+O módulo enriquece `Position` com `currentPrice`, `currentValue`, `gainLoss`, `gainLossPercent` e `quoteChangePct`, sem quebrar a aplicação em caso de falha externa.
 
 ---
 
@@ -13,7 +18,16 @@ Integração com [Brapi.dev](https://brapi.dev) para buscar preços atuais dos a
 ```
 src/
   lib/
-    quotes.ts                        ← getQuotes() + fetchBatch()
+    quotes.ts                        ← fachada compatível (getQuotes)
+  modules/
+    quotes/
+      domain/
+        types.ts                     ← QuoteProviderId, ProviderQuote, QuoteProvider
+      providers/
+        brapi-provider.ts            ← provider primário (batch 50 + cache)
+        yahoo-provider.ts            ← fallback opcional (ticker BR com .SA)
+      service/
+        get-quotes.ts                ← orquestração + fallback + métricas
   modules/
     positions/
       types.ts                       ← PositionWithQuote + SerializedPositionWithQuote + enrichWithQuotes()
@@ -31,6 +45,8 @@ src/
   __tests__/
     lib/
       quotes.test.ts                 ← 4 testes enrichWithQuotes
+    modules/
+      quotes-service.test.ts         ← fallback, erro, provider desabilitado
     components/
       PositionCard.test.tsx          ← +2 casos P&L
 ```
@@ -65,11 +81,24 @@ export async function getQuotes(
 ): Promise<Map<string, QuoteResult>>
 ```
 
-- Agrupa tickers em lotes de 50
-- `fetch` com `next: { revalidate: 300 }` — cache nativo do Next.js
-- Resposta da Brapi parseada com **tipos dedicados** (DEC-017 — sem `any` explícito)
-- Batch com erro (4xx/5xx) retorna `[]` silenciosamente
-- Tickers ausentes simplesmente não aparecem no `Map` retornado
+- Mantém contrato compatível para consumidores existentes
+- Delega para `src/modules/quotes/service/get-quotes.ts`
+- Resolve providers por configuração de ambiente
+- Aplica fallback automático para tickers pendentes
+- Emite métricas por provider no log (`[quotes]`)
+
+## Providers
+
+### Brapi (primário)
+- Lotes de até 50 tickers
+- Cache `revalidate: 300`
+- Pode retornar vazio para parte dos ativos sem token
+
+### Yahoo (fallback opcional)
+- Ativado por `YAHOO_ENABLED=true`
+- Para ativos brasileiros, consulta com sufixo `.SA` (ex.: `PETR4` -> `PETR4.SA`)
+- Retorna a chave no formato original do ticker da posição (ex.: `PETR4`)
+- Compatível com Node 20+ (recomendado 22+)
 
 ---
 
@@ -143,6 +172,9 @@ A diferença entre os dois KPIs é o P&L implícito da carteira.
 ```bash
 # .env.local
 BRAPI_TOKEN=seu_token_aqui   # opcional — https://brapi.dev
+QUOTE_PROVIDER_PRIMARY=brapi
+QUOTE_PROVIDER_FALLBACKS=yahoo
+YAHOO_ENABLED=false
 ```
 
 Documentada em `run.md` como opcional.
@@ -159,6 +191,15 @@ Documentada em `run.md` como opcional.
 | Ticker ausente no mapa | todos os campos null |
 | P&L negativo | gainLoss.isNegative() = true |
 | totalCost zero | gainLossPercent = 0 (sem divisão por zero) |
+
+### `quotes-service.test.ts` — 4 testes (orquestração multi-provider)
+
+| Caso | Validação |
+|------|-----------|
+| fallback parcial | provider secundário completa tickers faltantes |
+| short-circuit | não chama fallback se primário cobriu todos |
+| falha no primário | continua no secundário |
+| provider desabilitado | ignora provider fora da configuração ativa |
 
 ### `PositionCard.test.tsx` — +2 casos
 

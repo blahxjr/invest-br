@@ -1,6 +1,6 @@
 # Plano Técnico: Market Data Multi-Provider (V2)
 
-**Status:** Pronto para implementação  
+**Status:** Fase 1 implementada  
 **Data:** 2026-04-21  
 **Escopo:** Atualização de cotação de ativos com fallback resiliente e opção de near-real-time
 
@@ -34,6 +34,7 @@ Referência: https://brapi.dev/docs
 - Biblioteca madura e tipada para Node.
 - API não oficial e sem garantias de estabilidade/consistência por parte do Yahoo.
 - Adequada como fallback opcional, não como fonte primária crítica.
+- Para ativos brasileiros, usar sufixo `.SA` na consulta e mapear resultado para ticker interno original.
 
 Referências:
 - https://github.com/gadicc/yahoo-finance2
