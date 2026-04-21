@@ -20,6 +20,17 @@ function normalizeTicker(ticker: string): string {
   return ticker.trim().toUpperCase()
 }
 
+function toYahooSymbol(ticker: string): string {
+  const normalized = normalizeTicker(ticker)
+
+  if (normalized.includes('.')) {
+    return normalized
+  }
+
+  // Tickers de B3 no Yahoo usam sufixo .SA (PETR4 -> PETR4.SA).
+  return `${normalized}.SA`
+}
+
 function isNodeVersionSupported(): boolean {
   const major = Number.parseInt(process.versions.node.split('.')[0] ?? '0', 10)
   return major >= MIN_SUPPORTED_NODE_MAJOR
@@ -129,23 +140,27 @@ async function getYahooClient(): Promise<YahooClient> {
   if (!yahooClientPromise) {
     yahooClientPromise = import('yahoo-finance2').then((module) => {
       const YahooFinanceCtor = module.default
-      return new YahooFinanceCtor() as YahooClient
+      return new YahooFinanceCtor({ suppressNotices: ['yahooSurvey'] }) as YahooClient
     })
   }
 
   return yahooClientPromise
 }
 
-async function fetchTickerQuote(client: YahooClient, ticker: string, timeoutMs: number): Promise<ProviderQuote | null> {
+async function fetchTickerQuote(
+  client: YahooClient,
+  originalTicker: string,
+  timeoutMs: number,
+): Promise<ProviderQuote | null> {
   try {
-    const rawPayload = await withTimeout(client.quote(ticker), timeoutMs)
+    const rawPayload = await withTimeout(client.quote(toYahooSymbol(originalTicker)), timeoutMs)
     const parsed = parseYahooQuote(rawPayload)
     if (!parsed) {
       return null
     }
 
     return {
-      ticker: normalizeTicker(parsed.symbol),
+      ticker: normalizeTicker(originalTicker),
       price: parsed.regularMarketPrice,
       changedAt: parseMarketTime(parsed.regularMarketTime),
       changePercent:
