@@ -46,15 +46,6 @@
 - /login
 - /login/verify
 - /api/auth/[...nextauth]
-
-## Modulos implementados
-### Accounts/Institutions
-Status: implementado e coberto por testes.
-Arquivos-chave: src/modules/accounts/service.ts, src/modules/institutions/service.ts
-Contratos: createAccount, getAccountsByPortfolio, getAccountsByClient, updateAccount, createInstitution, listInstitutions, updateInstitution
-
-### Assets
-Status: implementado.
 Arquivos-chave: src/modules/assets/service.ts
 Contratos: createAssetClass, createAsset, getAssetByTicker, getAllAssetClasses, getAssetsByClass
 
@@ -83,16 +74,10 @@ Atualizacao 19/04 (commit 736711c):
 Status: v2 completo com enriquecimento de dados, dual view, filtros e alocacao baseada em valor de mercado.
 Arquivos-chave: src/modules/positions/service.ts, src/modules/positions/types.ts, src/modules/positions/history.ts, src/app/(app)/positions/positions-page-client.tsx, src/app/(app)/positions/positions-table.tsx
 Contratos: 
-- Service: calcPositions, summarizePositions, getPositions, enrichWithQuotes (3-pass allocation), calcSnapshotsFromTxs, calcPatrimonyHistory
-- UI: PositionCard (account, institution, allocation %), PositionsTable (11 colunas sortaveis), toggle cards/table (localStorage), filtros (account, institution, search)
-Recursos P18:
 - Enriquecimento: accountId, accountName, institutionId, institutionName, allocationPct
 - Dual view: cards vs table com toggle persistido em localStorage
 - Sorting: multi-coluna com estado client-side
 - Filtros: conta, instituicao, busca por ticker com reset button
-- Allocation: valor de mercado (currentValue) com fallback para totalCost
-- Reset script: scripts/reset-import-data.ts com confirmacao interativa
-- Testes: PositionsEnrichment.test.tsx com 11 casos cobrindo UI, filters, sorting
 - Correção: alocacao no dashboard usa calcAllocationWithQuotes para consistencia
 
 ### Dashboard
@@ -240,16 +225,14 @@ Arquivos-chave: src/app/(app)/performance/page.tsx, src/app/(app)/performance/pe
 Contratos: rota /performance com filtro client-side por periodo e KPIs de evolucao patrimonial
 
 ## Testes
-- Total: 239 passed, 0 failed, 0 skipped
-- Arquivos de teste: 40
-- Destaques:
+ Total: **416 passed, 0 failed, 0 skipped** (Etapa 1)
+ Arquivos de teste: 54
   - __tests__/modules/history.test.ts: 5
   - __tests__/lib/quotes.test.ts: 4
   - __tests__/modules/positions.test.ts: 5
   - __tests__/modules/dashboard.test.ts: 4
   - __tests__/components/Sidebar.test.tsx: 3
 
-## Decisoes tecnicas ativas
 - DEC-001: Prisma 7 exige @prisma/adapter-pg
 - DEC-002: DATABASE_URL via prisma.config.ts
 - DEC-003: .env.local com precedencia sobre .env
