@@ -33,7 +33,37 @@ type PositionTransaction = {
   account: PositionAccount
 }
 
+type PersistedPositionRecord = {
+  quantity: { toString(): string }
+  totalCost: { toString(): string }
+  avgCost: { toString(): string }
+  asset: PositionAsset
+  account: PositionAccount
+}
+
 type PositionMap = Map<string, Position>
+
+function buildPositionKey(accountId: string, assetId: string): string {
+  return `${accountId}:${assetId}`
+}
+
+function mapPersistedPosition(record: PersistedPositionRecord): Position {
+  return {
+    assetId: record.asset.id,
+    ticker: record.asset.ticker ?? '',
+    name: record.asset.name,
+    category: record.asset.category,
+    assetClassCode: record.asset.assetClass.code ?? '',
+    quantity: new Decimal(record.quantity.toString()),
+    avgCost: new Decimal(record.avgCost.toString()),
+    totalCost: new Decimal(record.totalCost.toString()),
+    accountId: record.account.id,
+    accountName: record.account.name,
+    institutionId: record.account.institution?.id ?? null,
+    institutionName: record.account.institution?.name ?? null,
+    allocationPct: new Decimal(0),
+  }
+}
 
 /**
  * Calcula as posicoes abertas em memoria a partir das transacoes BUY/SELL.
@@ -44,7 +74,7 @@ export function calcPositions(transactions: PositionTransaction[]): Position[] {
   for (const tx of transactions) {
     if (!tx.asset || !tx.quantity) continue
 
-    const key = tx.asset.id
+    const key = buildPositionKey(tx.account.id, tx.asset.id)
     const pos = map.get(key) ?? {
       assetId: tx.asset.id,
       ticker: tx.asset.ticker ?? '',
@@ -105,16 +135,17 @@ export function summarizePositions(positions: Position[]): PositionSummary {
   )
 }
 
-/**
- * Busca todas as transacoes BUY/SELL do usuario em uma unica query e calcula posicoes.
- */
-export async function getPositions(userId: string): Promise<Position[]> {
-  const transactions = await prisma.transaction.findMany({
+async function loadPositionTransactions(where: {
+  accountId?: string
+  userId?: string
+}): Promise<PositionTransaction[]> {
+  return prisma.transaction.findMany({
     where: {
       type: { in: ['BUY', 'SELL'] },
-      account: { client: { userId } },
       assetId: { not: null },
       deletedAt: null,
+      ...(where.accountId ? { accountId: where.accountId } : {}),
+      ...(where.userId ? { account: { client: { userId: where.userId } } } : {}),
     },
     select: {
       type: true,
@@ -145,53 +176,100 @@ export async function getPositions(userId: string): Promise<Position[]> {
     },
     orderBy: { date: 'asc' },
   })
+}
 
-  return calcPositions(transactions)
+async function loadPersistedPositions(where: {
+  accountId?: string
+  userId?: string
+}): Promise<Position[]> {
+  const records = await prisma.position.findMany({
+    where: {
+      ...(where.accountId ? { accountId: where.accountId } : {}),
+      ...(where.userId ? { account: { client: { userId: where.userId } } } : {}),
+    },
+    select: {
+      quantity: true,
+      totalCost: true,
+      avgCost: true,
+      asset: {
+        select: {
+          id: true,
+          ticker: true,
+          name: true,
+          category: true,
+          assetClass: { select: { code: true } },
+        },
+      },
+      account: {
+        select: {
+          id: true,
+          name: true,
+          institution: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      },
+    },
+  })
+
+  return records.map(mapPersistedPosition)
 }
 
 /**
- * Recalcula as posições de uma conta específica a partir das transações BUY/SELL não deletadas.
- * Como o projeto calcula posições on-the-fly, este recálculo retorna o estado consolidado atual.
+ * Busca posições do usuário priorizando os snapshots persistidos e preservando fallback compatível.
+ */
+export async function getPositions(userId: string): Promise<Position[]> {
+  const [persistedPositions, transactions] = await Promise.all([
+    loadPersistedPositions({ userId }),
+    loadPositionTransactions({ userId }),
+  ])
+
+  const computedPositions = calcPositions(transactions)
+  if (persistedPositions.length === 0) {
+    return computedPositions
+  }
+
+  const persistedKeys = new Set(
+    persistedPositions.map((position) => buildPositionKey(position.accountId, position.assetId)),
+  )
+
+  const fallbackPositions = computedPositions.filter(
+    (position) => !persistedKeys.has(buildPositionKey(position.accountId, position.assetId)),
+  )
+
+  return [...persistedPositions, ...fallbackPositions]
+    .sort((a, b) => b.totalCost.comparedTo(a.totalCost))
+}
+
+/**
+ * Recalcula e persiste as posições de uma conta específica a partir das transações BUY/SELL.
  */
 export async function recalcPositions(accountId: string): Promise<Position[]> {
-  const transactions = await prisma.transaction.findMany({
-    where: {
-      type: { in: ['BUY', 'SELL'] },
-      accountId,
-      assetId: { not: null },
-      deletedAt: null,
-    },
-    select: {
-      type: true,
-      quantity: true,
-      totalAmount: true,
-      date: true,
-      asset: {
-        select: {
-          id: true,
-          ticker: true,
-          name: true,
-          category: true,
-          assetClass: { select: { code: true } },
-        },
-      },
-      account: {
-        select: {
-          id: true,
-          name: true,
-          institution: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-        },
-      },
-    },
-    orderBy: { date: 'asc' },
+  const transactions = await loadPositionTransactions({ accountId })
+  const positions = calcPositions(transactions)
+
+  await prisma.$transaction(async (tx) => {
+    await tx.position.deleteMany({ where: { accountId } })
+
+    if (positions.length === 0) {
+      return
+    }
+
+    await tx.position.createMany({
+      data: positions.map((position) => ({
+        accountId: position.accountId,
+        assetId: position.assetId,
+        quantity: position.quantity.toFixed(8),
+        totalCost: position.totalCost.toFixed(2),
+        avgCost: position.avgCost.toFixed(8),
+      })),
+    })
   })
 
-  return calcPositions(transactions)
+  return positions
 }
 
 /**

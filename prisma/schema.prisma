@@ -51,6 +51,7 @@ model Client {
   insightConfigProfileId String?
   insightConfigProfile   InsightConfigProfile? @relation("ClientInsightProfile", fields: [insightConfigProfileId], references: [id])
   accounts  Account[]
+  portfolios Portfolio[]
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
@@ -97,14 +98,18 @@ model Portfolio {
   id          String    @id @default(cuid())
   name        String
   description String?
-  userId      String
-  user        User      @relation(fields: [userId], references: [id])
+  clientId    String?
+  client      Client?   @relation(fields: [clientId], references: [id])
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id])
   insightConfigProfileId String?
   insightConfigProfile   InsightConfigProfile? @relation("PortfolioInsightProfile", fields: [insightConfigProfileId], references: [id])
   accounts    Account[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  @@index([clientId])
+  @@index([userId])
   @@index([insightConfigProfileId])
 }
 
@@ -120,6 +125,7 @@ model Account {
   id             String         @id @default(cuid())
   name           String
   type           AccountType
+  brokerAccountNumber String?
   clientId       String
   client         Client         @relation(fields: [clientId], references: [id])
   portfolioId    String?
@@ -130,8 +136,12 @@ model Account {
   originTransactions Transaction[] @relation("OriginAccountTransactions")
   ledgerEntries  LedgerEntry[]
   incomeEvents   IncomeEvent[]
+  positions      Position[]
   rentalReceipts RentalReceipt[]
   createdAt      DateTime       @default(now())
+
+  @@unique([clientId, institutionId, name])
+  @@unique([clientId, institutionId, brokerAccountNumber])
 }
 
 // ─── Catálogo de ativos ──────────────────────────────────────────────────────
@@ -185,15 +195,47 @@ model Asset {
   isin               String?            @unique
   cnpj               String?            @unique
   category           AssetCategory
+  subtype            String?
   currency           String             @default("BRL")
   country            String?
+  indexer            String?
+  fixedRate          Decimal?           @db.Decimal(10, 6)
+  emissionDate       DateTime?          @db.Date
+  maturityDate       DateTime?          @db.Date
   recommendedHorizon InvestmentHorizon?
   assetClassId       String
   assetClass         AssetClass         @relation(fields: [assetClassId], references: [id])
   transactions       Transaction[]
   incomeEvents       IncomeEvent[]
+  positions          Position[]
+  prices             AssetPrice[]
   subscriptionRights SubscriptionRight[]
   createdAt          DateTime           @default(now())
+}
+
+model Position {
+  id          String   @id @default(cuid())
+  accountId   String
+  account     Account  @relation(fields: [accountId], references: [id])
+  assetId     String
+  asset       Asset    @relation(fields: [assetId], references: [id])
+  quantity    Decimal  @db.Decimal(18, 8)
+  totalCost   Decimal  @db.Decimal(18, 2)
+  avgCost     Decimal  @db.Decimal(18, 8)
+  lastUpdated DateTime @updatedAt
+
+  @@unique([accountId, assetId])
+}
+
+model AssetPrice {
+  id      String   @id @default(cuid())
+  assetId String
+  asset   Asset    @relation(fields: [assetId], references: [id])
+  price   Decimal  @db.Decimal(18, 8)
+  date    DateTime @db.Date
+  source  String
+
+  @@unique([assetId, date])
 }
 
 model InsightType {

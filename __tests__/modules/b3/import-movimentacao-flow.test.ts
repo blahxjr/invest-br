@@ -21,6 +21,14 @@ beforeAll(async () => {
   })
   userId = user.id
 
+  const client = await prisma.client.create({
+    data: {
+      name: uniqueName(`client-mov-flow-${suiteId}`),
+      userId,
+    },
+  })
+  createdClientId = client.id
+
   await prisma.assetClass.upsert({
     where: { code: 'ACOES' },
     update: {},

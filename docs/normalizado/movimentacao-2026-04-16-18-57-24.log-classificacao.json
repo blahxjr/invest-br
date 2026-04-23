@@ -1,0 +1,278 @@
+{
+  "arquivo_origem": "docs/normalizado/movimentacao-2026-04-16-18-57-24.normalizado.xlsx",
+  "total_linhas": 859,
+  "categorias_contagem": {
+    "rendimento": 444,
+    "subscrição": 19,
+    "juros sobre capital próprio": 100,
+    "atualização": 20,
+    "transferência/liquidação": 161,
+    "direito de subscrição não exercido": 16,
+    "cessão de direitos": 20,
+    "dividendo": 40,
+    "fração em ativos": 6,
+    "resgate": 6,
+    "bonificação": 3,
+    "juros": 9,
+    "vencimento": 5,
+    "desdobro": 3,
+    "outro": 7
+  },
+  "linhas_revisar": 350,
+  "linhas_inconsistentes_qtd_preco_valor": 91,
+  "motivos_revisao": {
+    "categoria_outro": 7,
+    "impacto_mapeado_como_revisao": 249,
+    "inconsistencia_qtd_preco_valor": 91,
+    "dados_numericos_insuficientes": 94
+  },
+  "exemplos_revisao": [
+    {
+      "linha": 38,
+      "movimentacao_original": "Direito de Subscrição",
+      "produto_original": "GGRC12 - GGR COVEPI RENDA FDO INV IMOB RESPONSAB LTDA",
+      "categoria_evento": "subscrição",
+      "motivo_revisao": [
+        "dados_numericos_insuficientes",
+        "impacto_mapeado_como_revisao"
+      ],
+      "quantidade_numerica": 10,
+      "preco_unitario_numerico": "REVISAR",
+      "valor_total_numerico": "REVISAR"
+    },
+    {
+      "linha": 39,
+      "movimentacao_original": "Direito de Subscrição",
+      "produto_original": "GGRC12 - GGR COVEPI RENDA FDO INV IMOB RESPONSAB LTDA",
+      "categoria_evento": "subscrição",
+      "motivo_revisao": [
+        "dados_numericos_insuficientes",
+        "impacto_mapeado_como_revisao"
+      ],
+      "quantidade_numerica": 13,
+      "preco_unitario_numerico": "REVISAR",
+      "valor_total_numerico": "REVISAR"
+    },
+    {
+      "linha": 50,
+      "movimentacao_original": "Direito de Subscrição",
+      "produto_original": "RECR12 - FDO INV IMOB - FII REC RECEBIVEIS IMOBILIARIOS",
+      "categoria_evento": "subscrição",
+      "motivo_revisao": [
+        "dados_numericos_insuficientes",
+        "impacto_mapeado_como_revisao"
+      ],
+      "quantidade_numerica": 0,
+      "preco_unitario_numerico": "REVISAR",
+      "valor_total_numerico": "REVISAR"
+    },
+    {
+      "linha": 51,
+      "movimentacao_original": "Direito de Subscrição",
+      "produto_original": "RECR12 - FDO INV IMOB - FII REC RECEBIVEIS IMOBILIARIOS",
+      "categoria_evento": "subscrição",
+      "motivo_revisao": [
+        "dados_numericos_insuficientes",
+        "impacto_mapeado_como_revisao"
+      ],
+      "quantidade_numerica": 0,
+      "preco_unitario_numerico": "REVISAR",
+      "valor_total_numerico": "REVISAR"
+    },
+    {
+      "linha": 52,
+      "movimentacao_original": "Juros Sobre Capital Próprio",
+      "produto_original": "VIVT3 - TELEFONICA BRASIL S.A.",
+      "categoria_evento": "juros sobre capital próprio",
+      "motivo_revisao": [
+        "inconsistencia_qtd_preco_valor"
+      ],
+      "quantidade_numerica": 2,
+      "preco_unitario_numerico": 0.106,
+      "valor_total_numerico": 0.18
+    },
+    {
+      "linha": 53,
+      "movimentacao_original": "Juros Sobre Capital Próprio",
+      "produto_original": "VIVT3 - TELEFONICA BRASIL S.A.",
+      "categoria_evento": "juros sobre capital próprio",
+      "motivo_revisao": [
+        "inconsistencia_qtd_preco_valor"
+      ],
+      "quantidade_numerica": 2,
+      "preco_unitario_numerico": 0.11,
+      "valor_total_numerico": 0.18
+    },
+    {
+      "linha": 54,
+      "movimentacao_original": "Juros Sobre Capital Próprio",
+      "produto_original": "VIVT3 - TELEFONICA BRASIL S.A.",
+      "categoria_evento": "juros sobre capital próprio",
+      "motivo_revisao": [
+        "inconsistencia_qtd_preco_valor"
+      ],
+      "quantidade_numerica": 2,
+      "preco_unitario_numerico": 0.119,
+      "valor_total_numerico": 0.2
+    },
+    {
+      "linha": 55,
+      "movimentacao_original": "Juros Sobre Capital Próprio",
+      "produto_original": "B3SA3 - B3 S.A. - BRASIL, BOLSA, BALCÃO",
+      "categoria_evento": "juros sobre capital próprio",
+      "motivo_revisao": [
+        "inconsistencia_qtd_preco_valor"
+      ],
+      "quantidade_numerica": 4,
+      "preco_unitario_numerico": 0.074,
+      "valor_total_numerico": 0.25
+    },
+    {
+      "linha": 56,
+      "movimentacao_original": "Juros Sobre Capital Próprio",
+      "produto_original": "B3SA3 - B3 S.A. - BRASIL, BOLSA, BALCÃO",
+      "categoria_evento": "juros sobre capital próprio",
+      "motivo_revisao": [
+        "inconsistencia_qtd_preco_valor"
+      ],
+      "quantidade_numerica": 4,
+      "preco_unitario_numerico": 0.074,
+      "valor_total_numerico": 0.24
+    },
+    {
+      "linha": 57,
+      "movimentacao_original": "Juros Sobre Capital Próprio",
+      "produto_original": "B3SA3 - B3 S.A. - BRASIL, BOLSA, BALCÃO",
+      "categoria_evento": "juros sobre capital próprio",
+      "motivo_revisao": [
+        "inconsistencia_qtd_preco_valor"
+      ],
+      "quantidade_numerica": 26,
+      "preco_unitario_numerico": 0.074,
+      "valor_total_numerico": 1.65
+    },
+    {
+      "linha": 58,
+      "movimentacao_original": "Juros Sobre Capital Próprio",
+      "produto_original": "B3SA3 - B3 S.A. - BRASIL, BOLSA, BALCÃO",
+      "categoria_evento": "juros sobre capital próprio",
+      "motivo_revisao": [
+        "inconsistencia_qtd_preco_valor"
+      ],
+      "quantidade_numerica": 26,
+      "preco_unitario_numerico": 0.074,
+      "valor_total_numerico": 1.6
+    },
+    {
+      "linha": 59,
+      "movimentacao_original": "Juros Sobre Capital Próprio",
+      "produto_original": "B3SA3 - B3 S.A. - BRASIL, BOLSA, BALCÃO",
+      "categoria_evento": "juros sobre capital próprio",
+      "motivo_revisao": [
+        "inconsistencia_qtd_preco_valor"
+      ],
+      "quantidade_numerica": 10,
+      "preco_unitario_numerico": 0.074,
+      "valor_total_numerico": 0.63
+    },
+    {
+      "linha": 60,
+      "movimentacao_original": "Juros Sobre Capital Próprio",
+      "produto_original": "B3SA3 - B3 S.A. - BRASIL, BOLSA, BALCÃO",
+      "categoria_evento": "juros sobre capital próprio",
+      "motivo_revisao": [
+        "inconsistencia_qtd_preco_valor"
+      ],
+      "quantidade_numerica": 10,
+      "preco_unitario_numerico": 0.074,
+      "valor_total_numerico": 0.62
+    },
+    {
+      "linha": 63,
+      "movimentacao_original": "Juros Sobre Capital Próprio",
+      "produto_original": "PSSA3 - PORTO SEGURO S/A",
+      "categoria_evento": "juros sobre capital próprio",
+      "motivo_revisao": [
+        "inconsistencia_qtd_preco_valor"
+      ],
+      "quantidade_numerica": 1,
+      "preco_unitario_numerico": 0.538,
+      "valor_total_numerico": 0.46
+    },
+    {
+      "linha": 64,
+      "movimentacao_original": "Juros Sobre Capital Próprio",
+      "produto_original": "PSSA3 - PORTO SEGURO S/A",
+      "categoria_evento": "juros sobre capital próprio",
+      "motivo_revisao": [
+        "inconsistencia_qtd_preco_valor"
+      ],
+      "quantidade_numerica": 1,
+      "preco_unitario_numerico": 0.534,
+      "valor_total_numerico": 0.46
+    },
+    {
+      "linha": 74,
+      "movimentacao_original": "Atualização",
+      "produto_original": "BPAC11 - BANCO BTG PACTUAL S/A",
+      "categoria_evento": "atualização",
+      "motivo_revisao": [
+        "dados_numericos_insuficientes",
+        "impacto_mapeado_como_revisao"
+      ],
+      "quantidade_numerica": 1,
+      "preco_unitario_numerico": "REVISAR",
+      "valor_total_numerico": "REVISAR"
+    },
+    {
+      "linha": 75,
+      "movimentacao_original": "Atualização",
+      "produto_original": "VALE3 - VALE S.A.",
+      "categoria_evento": "atualização",
+      "motivo_revisao": [
+        "dados_numericos_insuficientes",
+        "impacto_mapeado_como_revisao"
+      ],
+      "quantidade_numerica": 3,
+      "preco_unitario_numerico": "REVISAR",
+      "valor_total_numerico": "REVISAR"
+    },
+    {
+      "linha": 76,
+      "movimentacao_original": "Transferência - Liquidação",
+      "produto_original": "BRCO11 - FII BRESCO  ",
+      "categoria_evento": "transferência/liquidação",
+      "motivo_revisao": [
+        "impacto_mapeado_como_revisao"
+      ],
+      "quantidade_numerica": 2,
+      "preco_unitario_numerico": 115.29,
+      "valor_total_numerico": 230.58
+    },
+    {
+      "linha": 77,
+      "movimentacao_original": "Transferência - Liquidação",
+      "produto_original": "BRCR11 - FDO INV IMOB - FII BTG PACTUAL CORP. OFFICE FUND",
+      "categoria_evento": "transferência/liquidação",
+      "motivo_revisao": [
+        "impacto_mapeado_como_revisao"
+      ],
+      "quantidade_numerica": 5,
+      "preco_unitario_numerico": 46.67,
+      "valor_total_numerico": 233.35
+    },
+    {
+      "linha": 78,
+      "movimentacao_original": "Transferência - Liquidação",
+      "produto_original": "BTAL11 - FDO. INV. IMOB. BTG PACTUAL AGRO LOGÍSTICA",
+      "categoria_evento": "transferência/liquidação",
+      "motivo_revisao": [
+        "impacto_mapeado_como_revisao"
+      ],
+      "quantidade_numerica": 3,
+      "preco_unitario_numerico": 89.43,
+      "valor_total_numerico": 268.29
+    }
+  ],
+  "percentual_revisar": 40.75
+}

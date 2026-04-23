@@ -1,0 +1,384 @@
+{
+  "arquivo_origem": "docs/movimentacao-2026-04-16-18-57-24.xlsx",
+  "total_linhas": 859,
+  "correcoes_aplicadas": {
+    "data_iso": 859,
+    "instituicao_padronizada": 12,
+    "produto_limpo": 90,
+    "acentuacao_espacos_abreviacoes": 490,
+    "tipo_desconhecido_outro": 0,
+    "ambiguidades_revisar": 17,
+    "valor_numerico_convertido": 765
+  },
+  "exemplos_correcoes": [
+    {
+      "linha": 2,
+      "campos_alterados": [
+        "data_iso",
+        "instituicao_normalizada"
+      ],
+      "original": {
+        "entrada_saida": "Credito",
+        "data": "15/04/2026",
+        "movimentacao": "Rendimento",
+        "produto": "BBGO11 - BB FUNDO DE INVESTIMENTO DE CREDITO FIAGRO IMOBILIARIO RESPONSABILIDADE LIMITADA",
+        "instituicao": "NU INVESTIMENTOS S.A. - CTVM",
+        "quantidade": "5",
+        "preco_unitario": "0.85",
+        "valor_operacao": "4.25"
+      },
+      "normalizado": {
+        "data_iso": "2026-04-15",
+        "instituicao_normalizada": "NU INVEST CORRETORA DE VALORES S.A.",
+        "produto_limpo": "BBGO11 - BB FUNDO DE INVESTIMENTO DE CREDITO FIAGRO IMOBILIARIO RESPONSABILIDADE LIMITADA",
+        "ativo_ticker": "BBGO11",
+        "ativo_nome_limpo": "BB FUNDO DE INVESTIMENTO DE CREDITO FIAGRO IMOBILIARIO RESPONSABILIDADE LIMITADA",
+        "operacao_normalizada": "RENDIMENTO"
+      }
+    },
+    {
+      "linha": 3,
+      "campos_alterados": [
+        "data_iso",
+        "produto_limpo"
+      ],
+      "original": {
+        "entrada_saida": "Credito",
+        "data": "15/04/2026",
+        "movimentacao": "Rendimento",
+        "produto": "BRCO11 - FII BRESCO  ",
+        "instituicao": "BANCO BTG PACTUAL S/A",
+        "quantidade": "2",
+        "preco_unitario": "0.92",
+        "valor_operacao": "1.84"
+      },
+      "normalizado": {
+        "data_iso": "2026-04-15",
+        "instituicao_normalizada": "BANCO BTG PACTUAL S.A.",
+        "produto_limpo": "BRCO11 - FII BRESCO",
+        "ativo_ticker": "BRCO11",
+        "ativo_nome_limpo": "FII BRESCO",
+        "operacao_normalizada": "RENDIMENTO"
+      }
+    },
+    {
+      "linha": 4,
+      "campos_alterados": [
+        "data_iso"
+      ],
+      "original": {
+        "entrada_saida": "Credito",
+        "data": "15/04/2026",
+        "movimentacao": "Rendimento",
+        "produto": "BRCR11 - FDO INV IMOB - FII BTG PACTUAL CORP. OFFICE FUND",
+        "instituicao": "BANCO BTG PACTUAL S/A",
+        "quantidade": "6",
+        "preco_unitario": "0.41",
+        "valor_operacao": "2.46"
+      },
+      "normalizado": {
+        "data_iso": "2026-04-15",
+        "instituicao_normalizada": "BANCO BTG PACTUAL S.A.",
+        "produto_limpo": "BRCR11 - FDO INV IMOB - FII BTG PACTUAL CORP. OFFICE FUND",
+        "ativo_ticker": "BRCR11",
+        "ativo_nome_limpo": "FDO INV IMOB - FII BTG PACTUAL CORP. OFFICE FUND",
+        "operacao_normalizada": "RENDIMENTO"
+      }
+    },
+    {
+      "linha": 5,
+      "campos_alterados": [
+        "data_iso"
+      ],
+      "original": {
+        "entrada_saida": "Credito",
+        "data": "15/04/2026",
+        "movimentacao": "Rendimento",
+        "produto": "BTCI11 - FII BTG PACTUAL CRÉDITO IMOBILIÁRIO",
+        "instituicao": "BANCO BTG PACTUAL S/A",
+        "quantidade": "29",
+        "preco_unitario": "0.093",
+        "valor_operacao": "2.69"
+      },
+      "normalizado": {
+        "data_iso": "2026-04-15",
+        "instituicao_normalizada": "BANCO BTG PACTUAL S.A.",
+        "produto_limpo": "BTCI11 - FII BTG PACTUAL CRÉDITO IMOBILIÁRIO",
+        "ativo_ticker": "BTCI11",
+        "ativo_nome_limpo": "FII BTG PACTUAL CRÉDITO IMOBILIÁRIO",
+        "operacao_normalizada": "RENDIMENTO"
+      }
+    },
+    {
+      "linha": 6,
+      "campos_alterados": [
+        "data_iso"
+      ],
+      "original": {
+        "entrada_saida": "Credito",
+        "data": "15/04/2026",
+        "movimentacao": "Rendimento",
+        "produto": "BTCI11 - FII BTG PACTUAL CRÉDITO IMOBILIÁRIO",
+        "instituicao": "GENIAL INSTITUCIONAL CCTVM S/A",
+        "quantidade": "36",
+        "preco_unitario": "0.093",
+        "valor_operacao": "3.34"
+      },
+      "normalizado": {
+        "data_iso": "2026-04-15",
+        "instituicao_normalizada": "GENIAL INSTITUCIONAL CCTVM S.A.",
+        "produto_limpo": "BTCI11 - FII BTG PACTUAL CRÉDITO IMOBILIÁRIO",
+        "ativo_ticker": "BTCI11",
+        "ativo_nome_limpo": "FII BTG PACTUAL CRÉDITO IMOBILIÁRIO",
+        "operacao_normalizada": "RENDIMENTO"
+      }
+    },
+    {
+      "linha": 7,
+      "campos_alterados": [
+        "data_iso"
+      ],
+      "original": {
+        "entrada_saida": "Credito",
+        "data": "15/04/2026",
+        "movimentacao": "Rendimento",
+        "produto": "FATN11 - FUNDO DE INVESTIMENTO IMOBILIÁRIO ATHENA I",
+        "instituicao": "BANCO BTG PACTUAL S/A",
+        "quantidade": "3",
+        "preco_unitario": "0.8",
+        "valor_operacao": "2.4"
+      },
+      "normalizado": {
+        "data_iso": "2026-04-15",
+        "instituicao_normalizada": "BANCO BTG PACTUAL S.A.",
+        "produto_limpo": "FATN11 - FUNDO DE INVESTIMENTO IMOBILIÁRIO ATHENA I",
+        "ativo_ticker": "FATN11",
+        "ativo_nome_limpo": "FUNDO DE INVESTIMENTO IMOBILIÁRIO ATHENA I",
+        "operacao_normalizada": "RENDIMENTO"
+      }
+    },
+    {
+      "linha": 8,
+      "campos_alterados": [
+        "data_iso"
+      ],
+      "original": {
+        "entrada_saida": "Credito",
+        "data": "15/04/2026",
+        "movimentacao": "Rendimento",
+        "produto": "FATN11 - FUNDO DE INVESTIMENTO IMOBILIÁRIO ATHENA I",
+        "instituicao": "GENIAL INSTITUCIONAL CCTVM S/A",
+        "quantidade": "4",
+        "preco_unitario": "0.8",
+        "valor_operacao": "3.2"
+      },
+      "normalizado": {
+        "data_iso": "2026-04-15",
+        "instituicao_normalizada": "GENIAL INSTITUCIONAL CCTVM S.A.",
+        "produto_limpo": "FATN11 - FUNDO DE INVESTIMENTO IMOBILIÁRIO ATHENA I",
+        "ativo_ticker": "FATN11",
+        "ativo_nome_limpo": "FUNDO DE INVESTIMENTO IMOBILIÁRIO ATHENA I",
+        "operacao_normalizada": "RENDIMENTO"
+      }
+    },
+    {
+      "linha": 9,
+      "campos_alterados": [
+        "data_iso"
+      ],
+      "original": {
+        "entrada_saida": "Credito",
+        "data": "15/04/2026",
+        "movimentacao": "Rendimento",
+        "produto": "FGAA11 - FG/AGRO FDO DE INVEST - FIAGRO - IMOBILIÁRIO",
+        "instituicao": "BANCO BTG PACTUAL S/A",
+        "quantidade": "21",
+        "preco_unitario": "0.115",
+        "valor_operacao": "2.41"
+      },
+      "normalizado": {
+        "data_iso": "2026-04-15",
+        "instituicao_normalizada": "BANCO BTG PACTUAL S.A.",
+        "produto_limpo": "FGAA11 - FG/AGRO FDO DE INVEST - FIAGRO - IMOBILIÁRIO",
+        "ativo_ticker": "FGAA11",
+        "ativo_nome_limpo": "FG/AGRO FDO DE INVEST - FIAGRO - IMOBILIÁRIO",
+        "operacao_normalizada": "RENDIMENTO"
+      }
+    },
+    {
+      "linha": 10,
+      "campos_alterados": [
+        "data_iso"
+      ],
+      "original": {
+        "entrada_saida": "Credito",
+        "data": "15/04/2026",
+        "movimentacao": "Rendimento",
+        "produto": "HGBS11 - HEDGE BRASIL SHOPPING FDO INV IMOB",
+        "instituicao": "BANCO BTG PACTUAL S/A",
+        "quantidade": "16",
+        "preco_unitario": "0.17",
+        "valor_operacao": "2.72"
+      },
+      "normalizado": {
+        "data_iso": "2026-04-15",
+        "instituicao_normalizada": "BANCO BTG PACTUAL S.A.",
+        "produto_limpo": "HGBS11 - HEDGE BRASIL SHOPPING FDO INV IMOB",
+        "ativo_ticker": "HGBS11",
+        "ativo_nome_limpo": "HEDGE BRASIL SHOPPING FDO INV IMOB",
+        "operacao_normalizada": "RENDIMENTO"
+      }
+    },
+    {
+      "linha": 11,
+      "campos_alterados": [
+        "data_iso"
+      ],
+      "original": {
+        "entrada_saida": "Credito",
+        "data": "15/04/2026",
+        "movimentacao": "Rendimento",
+        "produto": "HGBS11 - HEDGE BRASIL SHOPPING FDO INV IMOB",
+        "instituicao": "GENIAL INSTITUCIONAL CCTVM S/A",
+        "quantidade": "16",
+        "preco_unitario": "0.17",
+        "valor_operacao": "2.72"
+      },
+      "normalizado": {
+        "data_iso": "2026-04-15",
+        "instituicao_normalizada": "GENIAL INSTITUCIONAL CCTVM S.A.",
+        "produto_limpo": "HGBS11 - HEDGE BRASIL SHOPPING FDO INV IMOB",
+        "ativo_ticker": "HGBS11",
+        "ativo_nome_limpo": "HEDGE BRASIL SHOPPING FDO INV IMOB",
+        "operacao_normalizada": "RENDIMENTO"
+      }
+    },
+    {
+      "linha": 12,
+      "campos_alterados": [
+        "data_iso",
+        "instituicao_normalizada"
+      ],
+      "original": {
+        "entrada_saida": "Credito",
+        "data": "15/04/2026",
+        "movimentacao": "Rendimento",
+        "produto": "HGBS11 - HEDGE BRASIL SHOPPING FDO INV IMOB",
+        "instituicao": "NU INVESTIMENTOS S.A. - CTVM",
+        "quantidade": "58",
+        "preco_unitario": "0.17",
+        "valor_operacao": "9.86"
+      },
+      "normalizado": {
+        "data_iso": "2026-04-15",
+        "instituicao_normalizada": "NU INVEST CORRETORA DE VALORES S.A.",
+        "produto_limpo": "HGBS11 - HEDGE BRASIL SHOPPING FDO INV IMOB",
+        "ativo_ticker": "HGBS11",
+        "ativo_nome_limpo": "HEDGE BRASIL SHOPPING FDO INV IMOB",
+        "operacao_normalizada": "RENDIMENTO"
+      }
+    },
+    {
+      "linha": 13,
+      "campos_alterados": [
+        "data_iso"
+      ],
+      "original": {
+        "entrada_saida": "Credito",
+        "data": "15/04/2026",
+        "movimentacao": "Rendimento",
+        "produto": "HGCR11 - PATRIA RECEBIVEIS IMOBILIARIOS - FIM- RESPONSABILIDADE LIMIT",
+        "instituicao": "BANCO BTG PACTUAL S/A",
+        "quantidade": "3",
+        "preco_unitario": "0.95",
+        "valor_operacao": "2.85"
+      },
+      "normalizado": {
+        "data_iso": "2026-04-15",
+        "instituicao_normalizada": "BANCO BTG PACTUAL S.A.",
+        "produto_limpo": "HGCR11 - PATRIA RECEBIVEIS IMOBILIARIOS - FIM- RESPONSABILIDADE LIMIT",
+        "ativo_ticker": "HGCR11",
+        "ativo_nome_limpo": "PATRIA RECEBIVEIS IMOBILIARIOS - FIM- RESPONSABILIDADE LIMIT",
+        "operacao_normalizada": "RENDIMENTO"
+      }
+    },
+    {
+      "linha": 14,
+      "campos_alterados": [
+        "data_iso"
+      ],
+      "original": {
+        "entrada_saida": "Credito",
+        "data": "15/04/2026",
+        "movimentacao": "Rendimento",
+        "produto": "HGCR11 - PATRIA RECEBIVEIS IMOBILIARIOS - FIM- RESPONSABILIDADE LIMIT",
+        "instituicao": "GENIAL INSTITUCIONAL CCTVM S/A",
+        "quantidade": "3",
+        "preco_unitario": "0.95",
+        "valor_operacao": "2.85"
+      },
+      "normalizado": {
+        "data_iso": "2026-04-15",
+        "instituicao_normalizada": "GENIAL INSTITUCIONAL CCTVM S.A.",
+        "produto_limpo": "HGCR11 - PATRIA RECEBIVEIS IMOBILIARIOS - FIM- RESPONSABILIDADE LIMIT",
+        "ativo_ticker": "HGCR11",
+        "ativo_nome_limpo": "PATRIA RECEBIVEIS IMOBILIARIOS - FIM- RESPONSABILIDADE LIMIT",
+        "operacao_normalizada": "RENDIMENTO"
+      }
+    },
+    {
+      "linha": 15,
+      "campos_alterados": [
+        "data_iso",
+        "instituicao_normalizada"
+      ],
+      "original": {
+        "entrada_saida": "Credito",
+        "data": "15/04/2026",
+        "movimentacao": "Rendimento",
+        "produto": "HGCR11 - PATRIA RECEBIVEIS IMOBILIARIOS - FIM- RESPONSABILIDADE LIMIT",
+        "instituicao": "NU INVESTIMENTOS S.A. - CTVM",
+        "quantidade": "21",
+        "preco_unitario": "0.95",
+        "valor_operacao": "19.95"
+      },
+      "normalizado": {
+        "data_iso": "2026-04-15",
+        "instituicao_normalizada": "NU INVEST CORRETORA DE VALORES S.A.",
+        "produto_limpo": "HGCR11 - PATRIA RECEBIVEIS IMOBILIARIOS - FIM- RESPONSABILIDADE LIMIT",
+        "ativo_ticker": "HGCR11",
+        "ativo_nome_limpo": "PATRIA RECEBIVEIS IMOBILIARIOS - FIM- RESPONSABILIDADE LIMIT",
+        "operacao_normalizada": "RENDIMENTO"
+      }
+    },
+    {
+      "linha": 16,
+      "campos_alterados": [
+        "data_iso"
+      ],
+      "original": {
+        "entrada_saida": "Credito",
+        "data": "15/04/2026",
+        "movimentacao": "Rendimento",
+        "produto": "HGLG11 - PÁTRIA LOG - FDO INV IMOB - RESPONSABILIDADE LTDA.",
+        "instituicao": "BANCO BTG PACTUAL S/A",
+        "quantidade": "2",
+        "preco_unitario": "1.1",
+        "valor_operacao": "2.2"
+      },
+      "normalizado": {
+        "data_iso": "2026-04-15",
+        "instituicao_normalizada": "BANCO BTG PACTUAL S.A.",
+        "produto_limpo": "HGLG11 - PÁTRIA LOG - FDO INV IMOB - RESPONSABILIDADE LTDA.",
+        "ativo_ticker": "HGLG11",
+        "ativo_nome_limpo": "PÁTRIA LOG - FDO INV IMOB - RESPONSABILIDADE LTDA.",
+        "operacao_normalizada": "RENDIMENTO"
+      }
+    }
+  ],
+  "resumo": {
+    "linhas_normalizadas": 859,
+    "linhas_marcadas_revisar": 16,
+    "percentual_revisar": 1.86
+  }
+}

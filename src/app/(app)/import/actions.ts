@@ -122,6 +122,8 @@ export type ConfirmImportPayload = {
     description?: string
   }>
   resolutions: SerializableUnresolvedAsset[]
+  clientId?: string
+  portfolioId?: string
 }
 
 export type ConfirmImportResponse = ConfirmImportResult & {
@@ -147,6 +149,8 @@ export type AnalyzeMovimentacaoResponse = Omit<AnalyzeMovimentacaoResult, 'lines
 
 export type ConfirmMovimentacaoPayload = {
   lines: SerializableMovimentacaoLine[]
+  clientId?: string
+  portfolioId?: string
 }
 
 export type ConfirmMovimentacaoResponse = ConfirmMovimentacaoResult & {
@@ -163,6 +167,8 @@ export type AnalyzePosicaoResponse = AnalyzePosicaoResult & {
 
 export type ConfirmPosicaoPayload = {
   lines: PosicaoReviewLine[]
+  clientId?: string
+  portfolioId?: string
 }
 
 export type ConfirmPosicaoResponse = ConfirmPosicaoResult & {
@@ -467,7 +473,11 @@ export async function confirmAndImportMovimentacao(
   }
 
   try {
-    const result = await confirmAndImportMovimentacaoForUser(session.user.id, toMovimentacaoLines(payload.lines))
+    const result = await confirmAndImportMovimentacaoForUser(
+      session.user.id,
+      toMovimentacaoLines(payload.lines),
+      { clientId: payload.clientId, portfolioId: payload.portfolioId },
+    )
     return result
   } catch (error) {
     return {
@@ -530,7 +540,11 @@ export async function confirmAndImportPosicao(payload: ConfirmPosicaoPayload): P
   }
 
   try {
-    const result = await confirmAndImportPosicaoForUser(session.user.id, payload.lines)
+    const result = await confirmAndImportPosicaoForUser(
+      session.user.id,
+      payload.lines,
+      { clientId: payload.clientId, portfolioId: payload.portfolioId },
+    )
     return result
   } catch (error) {
     return {
@@ -613,7 +627,11 @@ export async function confirmAndImportNegociacao(payload: ConfirmImportPayload):
   }
 
   try {
-    const result = await confirmAndImportNegociacaoForUser(session.user.id, toImportPayload(payload))
+    const result = await confirmAndImportNegociacaoForUser(
+      session.user.id,
+      toImportPayload(payload),
+      { clientId: payload.clientId, portfolioId: payload.portfolioId },
+    )
     return result
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Erro desconhecido'

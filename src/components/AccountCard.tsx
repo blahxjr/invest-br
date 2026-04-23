@@ -1,6 +1,8 @@
 import { Wallet, Building2, FolderKanban, User } from 'lucide-react'
+import Link from 'next/link'
 
 export interface AccountCardProps {
+  accountId?: string
   name: string
   type: string
   institutionName?: string
@@ -27,6 +29,7 @@ function formatCurrency(value: number) {
 }
 
 export default function AccountCard({
+  accountId,
   name,
   type,
   institutionName,
@@ -80,6 +83,13 @@ export default function AccountCard({
         <p className="text-2xl font-bold text-gray-900">{formatCurrency(balance)}</p>
         {transactionCount != null && (
           <p className="text-xs text-gray-400 mt-1">{transactionCount} movimentações</p>
+        )}
+        {accountId && (
+          <div className="mt-3">
+            <Link href={`/accounts/${accountId}/edit`} className="text-blue-600 hover:underline text-xs">
+              Editar conta
+            </Link>
+          </div>
         )}
       </div>
     </div>

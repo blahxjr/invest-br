@@ -11,7 +11,7 @@ import { safeDeleteMany, uniqueName, uniqueSuffix, uniqueTicker } from '../../he
 
 const suiteId = uniqueSuffix()
 let userId: string
-let clientId: string | null = null
+let clientId: string
 const createdTickers: string[] = []
 
 beforeAll(async () => {
@@ -23,6 +23,14 @@ beforeAll(async () => {
   })
   userId = user.id
 
+  const client = await prisma.client.create({
+    data: {
+      name: uniqueName('Cliente Review Flow'),
+      userId,
+    },
+  })
+  clientId = client.id
+
   await prisma.assetClass.upsert({
     where: { code: 'ACOES' },
     update: {},
@@ -31,14 +39,9 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  const client = await prisma.client.findFirst({ where: { userId }, select: { id: true } })
-  if (client?.id) {
-    clientId = client.id
-  }
-
-  const accountIds = clientId
-    ? (await prisma.account.findMany({ where: { clientId }, select: { id: true } })).map((item) => item.id)
-    : []
+  const accountIds = (await prisma.account.findMany({ where: { clientId }, select: { id: true } })).map(
+    (item) => item.id,
+  )
 
   await safeDeleteMany(prisma.auditLog, { changedBy: userId })
   if (accountIds.length > 0) {
@@ -49,11 +52,7 @@ afterAll(async () => {
 
   await safeDeleteMany(prisma.institution, { name: { in: ['CORRETORA REVIEW FLOW S.A.', 'BANCO REVIEW FLOW'] } })
   await safeDeleteMany(prisma.asset, { ticker: { in: createdTickers } })
-
-  if (clientId) {
-    await safeDeleteMany(prisma.client, { id: clientId })
-  }
-
+  await safeDeleteMany(prisma.client, { id: clientId })
   await safeDeleteMany(prisma.user, { id: userId })
   await prisma.$disconnect()
 })

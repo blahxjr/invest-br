@@ -1,0 +1,88 @@
+{
+  "user": {
+    "userId": "cmo63r8ba0000pd8xzod7q46b",
+    "email": "import-real-1776623492494@invest.br",
+    "clientId": "cmo63r8xv0001pd8xsnosm2dn"
+  },
+  "import": {
+    "movimentacao": {
+      "analysisSummary": {
+        "totalRows": 879,
+        "importableRows": 850,
+        "reviewRows": 29
+      },
+      "confirmSummary": {
+        "imported": 331,
+        "skipped": 548,
+        "reviewed": 879,
+        "errors": []
+      }
+    },
+    "posicao": {
+      "analysisSummary": {
+        "totalRows": 145,
+        "importableRows": 24,
+        "reviewRows": 121
+      },
+      "confirmSummary": {
+        "upserted": 24,
+        "skipped": 121,
+        "reviewed": 145,
+        "errors": []
+      }
+    }
+  },
+  "db": {
+    "accountsCount": 8,
+    "accountsWithoutPortfolio": 8,
+    "institutionsCount": 5,
+    "assetsCount": 55,
+    "transactionsCount": 331,
+    "ledgerEntriesCount": 634,
+    "auditMovCount": 1,
+    "auditPosCount": 1,
+    "txByType": {
+      "BUY": 2,
+      "SELL": 63,
+      "DIVIDEND": 245,
+      "CUSTODY_TRANSFER": 4,
+      "SUBSCRIPTION_RIGHT": 2,
+      "RIGHTS_TRANSFER": 3,
+      "CORPORATE_UPDATE": 4,
+      "MATURITY": 7,
+      "SPLIT": 1
+    }
+  },
+  "modules": {
+    "dashboardLike": {
+      "totalCost": 10084.49,
+      "totalValue": 10084.49,
+      "totalGainLoss": 0,
+      "totalGainLossPct": 0,
+      "assetCount": 2,
+      "monthlyIncome": 0,
+      "topPositionsCount": 2,
+      "allocationByClassCount": 1
+    },
+    "positions": {
+      "count": 2,
+      "sampleTickers": [
+        "CDB",
+        "TESOURO PREFIXADO COM JUROS SEMESTRAIS 2031"
+      ]
+    },
+    "insights": {
+      "count": 0,
+      "sampleTypes": []
+    }
+  },
+  "consistencyFlags": {
+    "hasTransactions": true,
+    "ledgerAtLeastTransactions": true,
+    "hasPositions": true,
+    "dashboardAssetMatchesPositions": true,
+    "hasInsights": false,
+    "movimentacaoReviewRows": 29,
+    "posicaoReviewRows": 121
+  }
+}

@@ -20,6 +20,7 @@ import { safeDeleteMany, uniqueName, uniqueSuffix, uniqueTicker } from '../../he
 
 const suiteId = uniqueSuffix()
 let userId: string
+let clientId: string
 const createdTickers: string[] = []
 
 beforeAll(async () => {
@@ -30,6 +31,14 @@ beforeAll(async () => {
     },
   })
   userId = user.id
+
+  const client = await prisma.client.create({
+    data: {
+      name: uniqueName(`client-auditlog-${suiteId}`),
+      userId,
+    },
+  })
+  clientId = client.id
 
   await prisma.assetClass.upsert({
     where: { code: 'ACOES' },
@@ -125,6 +134,19 @@ function buildReviewLine(input: {
     subscriptionDeadline: null,
     issues: [],
   }
+}
+
+/**
+ * Helper para scopar referenceId com userId (mesmo escopo que a função real na service).
+ */
+function scopeReferenceIdForUser(userId: string, referenceId: string): string {
+  const normalized = referenceId.trim()
+  if (!normalized) return normalized
+  const prefix = `usr:${userId}:`
+  if (normalized.startsWith(prefix)) {
+    return normalized
+  }
+  return `${prefix}${normalized}`
 }
 
 describe('confirmAndImportMovimentacaoForUser — AuditLog', () => {
@@ -235,8 +257,9 @@ describe('confirmAndImportMovimentacaoForUser — AuditLog', () => {
     // Transaction criada no banco
     const importedLine = analysis.lines.find((l) => l.action === 'IMPORT')
     expect(importedLine).toBeTruthy()
+    const scopedReferenceId = scopeReferenceIdForUser(userId, importedLine!.referenceId)
     const tx = await prisma.transaction.findFirst({
-      where: { referenceId: importedLine!.referenceId },
+      where: { referenceId: scopedReferenceId },
     })
     expect(tx).toBeTruthy()
     expect(tx?.type).toBe('DIVIDEND')
@@ -267,7 +290,8 @@ describe('confirmAndImportMovimentacaoForUser — AuditLog', () => {
     })
     expect(auditsAfter).toBe(auditsBefore + 1)
 
-    const txCount = await prisma.transaction.count({ where: { referenceId } })
+    const scopedReferenceId = scopeReferenceIdForUser(userId, referenceId)
+    const txCount = await prisma.transaction.count({ where: { referenceId: scopedReferenceId } })
     expect(txCount).toBe(1)
   })
 
@@ -280,7 +304,8 @@ describe('confirmAndImportMovimentacaoForUser — AuditLog', () => {
       buildReviewLine({ ticker, referenceId, action: 'SKIP' }),
     ])
 
-    const tx = await prisma.transaction.findFirst({ where: { referenceId } })
+    const scopedReferenceId = scopeReferenceIdForUser(userId, referenceId)
+    const tx = await prisma.transaction.findFirst({ where: { referenceId: scopedReferenceId } })
     expect(tx).toBeNull()
 
     const auditLog = await prisma.auditLog.findFirst({

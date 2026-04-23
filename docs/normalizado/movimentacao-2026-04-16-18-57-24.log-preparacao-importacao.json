@@ -1,0 +1,40 @@
+{
+  "arquivo_origem": "docs/normalizado/movimentacao-2026-04-16-18-57-24.classificada.xlsx",
+  "timestamp": "2026-04-16T22:19:30.211Z",
+  "regras_aplicadas": {
+    "cabecalhos_padronizados": true,
+    "tipos_consistentes": true,
+    "remocao_colunas_tecnicas_no_final": true,
+    "linhas_invalidas_removidas_do_final": true,
+    "duvidas_mantidas_em_auxiliar_revisar": true
+  },
+  "mapeamento_cabecalhos": {
+    "data_iso": "data_evento",
+    "categoria_evento": "categoria_evento",
+    "operacao_normalizada": "operacao",
+    "entrada_saida": "entrada_saida",
+    "ativo_ticker": "ticker",
+    "ativo_nome_limpo": "ativo_nome",
+    "instituicao_normalizada": "instituicao",
+    "quantidade_numerica": "quantidade",
+    "preco_unitario_numerico": "preco_unitario",
+    "valor_total_numerico": "valor_total"
+  },
+  "contagem": {
+    "total_entrada": 859,
+    "total_importacao_final": 500,
+    "total_auxiliar_revisar": 359
+  },
+  "motivos_revisar_contagem": {
+    "revisao_manual": 350,
+    "inconsistencia_qtd_preco_valor": 91,
+    "campo_obrigatorio_invalido": 10,
+    "categoria_outro": 7
+  },
+  "arquivos_saida": {
+    "importacao_final_xlsx": "docs/normalizado/movimentacao-2026-04-16-18-57-24.importacao-final.xlsx",
+    "importacao_final_csv": "docs/normalizado/movimentacao-2026-04-16-18-57-24.importacao-final.csv",
+    "auxiliar_revisar_xlsx": "docs/normalizado/movimentacao-2026-04-16-18-57-24.importacao-auxiliar-revisar.xlsx",
+    "auxiliar_revisar_csv": "docs/normalizado/movimentacao-2026-04-16-18-57-24.importacao-auxiliar-revisar.csv"
+  }
+}

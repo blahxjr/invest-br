@@ -589,59 +589,87 @@ async function getAssetClassIdByCategory(category: PosicaoRow['category']): Prom
   return assetClass.id
 }
 
+type ImportContext = {
+  clientId?: string
+  portfolioId?: string
+}
+
 /**
- * Busca o cliente padrão do usuário para vincular contas criadas via importação.
+ * Resolve o cliente da importação sem criar defaults implícitos.
  */
-export async function getOrCreateClientForUser(userId: string): Promise<string> {
+export async function getOrCreateClientForUser(userId: string, explicitClientId?: string): Promise<string> {
+  if (explicitClientId) {
+    const client = await prisma.client.findFirst({
+      where: { id: explicitClientId, userId },
+      select: { id: true },
+    })
+
+    if (!client) {
+      throw new Error('clientId invalido para o usuario autenticado')
+    }
+
+    return client.id
+  }
+
   const client = await prisma.client.findFirst({
     where: { userId },
     orderBy: { createdAt: 'asc' },
     select: { id: true },
   })
 
-  if (client) {
-    return client.id
+  if (!client) {
+    throw new Error('Nenhum cliente encontrado para importacao. Informe clientId explicitamente ou crie um cliente antes de importar.')
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { name: true },
-  })
-
-  const created = await prisma.client.create({
-    data: {
-      userId,
-      name: user?.name?.trim() || 'Cliente Principal',
-    },
-    select: { id: true },
-  })
-
-  return created.id
+  return client.id
 }
 
 /**
- * Busca ou cria o portfolio padrão do usuário para vincular contas importadas.
+ * Resolve o portfolio da importação priorizando clientId quando presente, sem criar defaults.
  */
-export async function getOrCreateDefaultPortfolioForUser(userId: string, tx: TxClient = prisma): Promise<string> {
-  const existing = await tx.portfolio.findFirst({
+export async function getOrCreateDefaultPortfolioForUser(
+  userId: string,
+  tx: TxClient = prisma,
+  options: ImportContext = {},
+): Promise<string | undefined> {
+  if (options.portfolioId) {
+    const portfolio = await tx.portfolio.findFirst({
+      where: {
+        id: options.portfolioId,
+        OR: [
+          { client: { userId } },
+          { userId },
+        ],
+      },
+      select: { id: true },
+    })
+
+    if (!portfolio) {
+      throw new Error('portfolioId invalido para o usuario autenticado')
+    }
+
+    return portfolio.id
+  }
+
+  if (options.clientId) {
+    const byClient = await tx.portfolio.findFirst({
+      where: { clientId: options.clientId },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    })
+
+    if (byClient) {
+      return byClient.id
+    }
+  }
+
+  const byUser = await tx.portfolio.findFirst({
     where: { userId },
     orderBy: { createdAt: 'asc' },
     select: { id: true },
   })
 
-  if (existing) {
-    return existing.id
-  }
-
-  const created = await tx.portfolio.create({
-    data: {
-      userId,
-      name: 'Minha Carteira',
-    },
-    select: { id: true },
-  })
-
-  return created.id
+  return byUser?.id
 }
 
 /**
@@ -1091,9 +1119,13 @@ export async function analyzeNegociacaoRows(rows: NegociacaoRow[], userId?: stri
 export async function confirmAndImportNegociacaoForUser(
   userId: string,
   payload: ImportPayload,
+  context: ImportContext = {},
 ): Promise<ConfirmImportResult> {
-  const clientId = await getOrCreateClientForUser(userId)
-  const portfolioId = await getOrCreateDefaultPortfolioForUser(userId)
+  const clientId = await getOrCreateClientForUser(userId, context.clientId)
+  const portfolioId = await getOrCreateDefaultPortfolioForUser(userId, prisma, {
+    clientId,
+    portfolioId: context.portfolioId,
+  })
   const normalizedReadyRows: ParsedRow[] = payload.readyRows.map((row) => ({
     ...row,
     date: ensureDate(row.date),
@@ -1615,10 +1647,14 @@ export async function analyzeMovimentacaoRows(
 export async function confirmAndImportMovimentacaoForUser(
   userId: string,
   lines: MovimentacaoReviewLine[],
+  context: ImportContext = {},
 ): Promise<ConfirmMovimentacaoResult> {
   console.log(`IMPORT_B3_MOVIMENTACAO: ${lines.length} linhas confirmadas`)
-  const clientId = await getOrCreateClientForUser(userId)
-  const portfolioId = await getOrCreateDefaultPortfolioForUser(userId)
+  const clientId = await getOrCreateClientForUser(userId, context.clientId)
+  const portfolioId = await getOrCreateDefaultPortfolioForUser(userId, prisma, {
+    clientId,
+    portfolioId: context.portfolioId,
+  })
   let imported = 0
   let skipped = 0
   const errors: string[] = []
@@ -1849,13 +1885,18 @@ export async function analyzePosicaoRows(parsedLines: PosicaoParsedLine[]): Prom
 export async function confirmAndImportPosicaoForUser(
   userId: string,
   lines: PosicaoReviewLine[],
+  context: ImportContext = {},
 ): Promise<ConfirmPosicaoResult> {
-  const clientId = await getOrCreateClientForUser(userId)
-  const portfolioId = await getOrCreateDefaultPortfolioForUser(userId)
+  const clientId = await getOrCreateClientForUser(userId, context.clientId)
+  const portfolioId = await getOrCreateDefaultPortfolioForUser(userId, prisma, {
+    clientId,
+    portfolioId: context.portfolioId,
+  })
   let upserted = 0
   let skipped = 0
   const errors: string[] = []
   const lineAudit: Array<Record<string, unknown>> = []
+  const affectedAccountIds = new Set<string>()
   const tickers = Array.from(new Set(lines.map((line) => line.ticker).filter(Boolean)))
   const existingBefore = tickers.length
     ? await prisma.asset.findMany({ where: { ticker: { in: tickers } }, select: { ticker: true } })
@@ -1892,6 +1933,7 @@ export async function confirmAndImportPosicaoForUser(
       })
 
       upserted++
+      affectedAccountIds.add(resolution.accountId)
       const wasExisting = existingTickerSet.has(line.ticker)
       lineAudit.push({
         id: line.id,
@@ -1922,6 +1964,10 @@ export async function confirmAndImportPosicaoForUser(
     },
   })
 
+  for (const accountId of affectedAccountIds) {
+    await positionsService.recalcPositions(accountId)
+  }
+
   return {
     upserted,
     skipped,
@@ -1933,14 +1979,22 @@ export async function confirmAndImportPosicaoForUser(
 /**
  * Importa linhas de negociacao criando transacoes idempotentes.
  */
-export async function importNegociacaoRows(userId: string, rows: NegociacaoRow[]): Promise<ImportResult> {
-  const clientId = await getOrCreateClientForUser(userId)
-  const portfolioId = await getOrCreateDefaultPortfolioForUser(userId)
+export async function importNegociacaoRows(
+  userId: string,
+  rows: NegociacaoRow[],
+  context: ImportContext = {},
+): Promise<ImportResult> {
+  const clientId = await getOrCreateClientForUser(userId, context.clientId)
+  const portfolioId = await getOrCreateDefaultPortfolioForUser(userId, prisma, {
+    clientId,
+    portfolioId: context.portfolioId,
+  })
   let imported = 0
   let skipped = 0
   const errors: string[] = []
   const reviewRows: Array<{ referenceId: string; reason: string; instituicao: string }> = []
   const institutionAudit = new Map<string, { accountName: string; institutionCreated: boolean; accountCreated: boolean }>()
+  const affectedAccountIds = new Set<string>()
 
   for (const row of rows) {
     try {
@@ -1976,6 +2030,7 @@ export async function importNegociacaoRows(userId: string, rows: NegociacaoRow[]
         skipped++
       } else {
         imported++
+        affectedAccountIds.add(resolution.accountId)
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro desconhecido'
@@ -2006,6 +2061,10 @@ export async function importNegociacaoRows(userId: string, rows: NegociacaoRow[]
     },
   })
 
+  for (const accountId of affectedAccountIds) {
+    await positionsService.recalcPositions(accountId)
+  }
+
   return { imported, skipped, errors }
 }
 
@@ -2016,14 +2075,19 @@ export async function importMovimentacaoRows(
   userId: string,
   rows: MovimentacaoRow[],
   parserReviewRows: MovimentacaoReviewRow[] = [],
+  context: ImportContext = {},
 ): Promise<ImportResult> {
-  const clientId = await getOrCreateClientForUser(userId)
-  const portfolioId = await getOrCreateDefaultPortfolioForUser(userId)
+  const clientId = await getOrCreateClientForUser(userId, context.clientId)
+  const portfolioId = await getOrCreateDefaultPortfolioForUser(userId, prisma, {
+    clientId,
+    portfolioId: context.portfolioId,
+  })
   let imported = 0
   let skipped = 0
   const errors: string[] = []
   const runtimeReviewRows: Array<{ referenceId: string; reason: string; instituicao: string }> = []
   const institutionAudit = new Map<string, { accountName: string; institutionCreated: boolean; accountCreated: boolean }>()
+  const affectedAccountIds = new Set<string>()
 
   for (const row of rows) {
     try {
@@ -2084,6 +2148,7 @@ export async function importMovimentacaoRows(
         skipped++
       } else {
         imported++
+        affectedAccountIds.add(resolution.accountId)
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro desconhecido'
@@ -2118,6 +2183,10 @@ export async function importMovimentacaoRows(
     },
   })
 
+  for (const accountId of affectedAccountIds) {
+    await positionsService.recalcPositions(accountId)
+  }
+
   const parserReviewMessages = parserReviewRows.map((item) => (
     `REVISAR linha ${item.lineNumber}: ${item.reason}`
   ))
@@ -2132,14 +2201,22 @@ export async function importMovimentacaoRows(
 /**
  * Importa linhas de posicao sincronizando apenas o catalogo de ativos.
  */
-export async function importPosicaoRows(userId: string, rows: PosicaoRow[]): Promise<ImportResult> {
-  const clientId = await getOrCreateClientForUser(userId)
-  const portfolioId = await getOrCreateDefaultPortfolioForUser(userId)
+export async function importPosicaoRows(
+  userId: string,
+  rows: PosicaoRow[],
+  context: ImportContext = {},
+): Promise<ImportResult> {
+  const clientId = await getOrCreateClientForUser(userId, context.clientId)
+  const portfolioId = await getOrCreateDefaultPortfolioForUser(userId, prisma, {
+    clientId,
+    portfolioId: context.portfolioId,
+  })
   let upserted = 0
   let skipped = 0
   const errors: string[] = []
   const reviewRows: Array<{ ticker: string; reason: string; instituicao: string }> = []
   const institutionAudit = new Map<string, { accountName: string; institutionCreated: boolean; accountCreated: boolean }>()
+  const affectedAccountIds = new Set<string>()
 
   for (const row of rows) {
     try {
@@ -2167,6 +2244,7 @@ export async function importPosicaoRows(userId: string, rows: PosicaoRow[]): Pro
         updatedValue: row.updatedValue,
       })
       upserted++
+      affectedAccountIds.add(resolution.accountId)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro desconhecido'
       errors.push(`Posicao ${row.ticker}: ${message}`)
@@ -2195,6 +2273,10 @@ export async function importPosicaoRows(userId: string, rows: PosicaoRow[]): Pro
       changedAt: new Date(),
     },
   })
+
+  for (const accountId of affectedAccountIds) {
+    await positionsService.recalcPositions(accountId)
+  }
 
   return { upserted, skipped, errors }
 }

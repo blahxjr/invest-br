@@ -47,18 +47,13 @@ describe('resetImportData', () => {
       accountsDeleted: 3,
       institutionsDeleted: 2,
       assetsDeleted: 6,
-      assetClassesDeleted: 1,
+      assetClassesDeleted: 0,
     })
 
     expect(mocks.prisma.asset.deleteMany).toHaveBeenCalledWith({
       where: { ticker: { not: null } },
     })
-    expect(mocks.prisma.assetClass.deleteMany).toHaveBeenCalledWith({
-      where: {
-        id: {
-          notIn: ['class-1'],
-        },
-      },
-    })
+    // AssetClasses não são deletadas — são dados de catálogo
+    expect(mocks.prisma.assetClass.deleteMany).not.toHaveBeenCalled()
   })
 })
